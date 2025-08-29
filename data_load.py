@@ -82,14 +82,14 @@ class MultiAgentReplayBuffer:
         self.observe_lengths = np.zeros((max_size, num_agents, observe_dim))  # 每个agent的观测长度
         self.observe_types = np.zeros((max_size, num_agents, observe_dim))  # 每个agent的观测类型
         self.actions = np.zeros((max_size, num_agents, action_dim))  # 每个agent的动作
-        self.rewards = np.zeros((max_size, num_agents))  # 每个agent的奖励
+        self.rewards = np.zeros((max_size, 1))  # 整个team的奖励
         self.next_states = np.zeros((max_size, state_dim))  # 下一步全局状态
         self.next_observe_lengths = np.zeros((max_size, num_agents, observe_dim))  # 下一步每个agent的观测长度
         self.next_observe_types = np.zeros((max_size, num_agents, observe_dim))  # 下一步每个agent的观测类型
         self.dones = np.zeros((max_size, 1))  # 环境结束标志，所有agent共享
 
     def store(self, state: np.ndarray, observe_lengths: np.ndarray, observe_types: np.ndarray, 
-              actions: np.ndarray, rewards: np.ndarray, 
+              actions: np.ndarray, rewards: float, 
               next_state: np.ndarray, next_observe_lengths: np.ndarray, next_observe_types: np.ndarray, done: int):
         """
         存储多个agent的经验
@@ -98,7 +98,7 @@ class MultiAgentReplayBuffer:
             observe_lengths: (num_agents, observe_dim) 每个agent的观测长度
             observe_types: (num_agents, observe_dim) 每个agent的观测类型
             actions: (num_agents, action_dim) 每个agent的动作
-            rewards: (num_agents,) 每个agent的奖励
+            rewards: float 整个team的奖励
             next_state: (state_dim,) 下一步全局状态
             next_observe_lengths: (num_agents, observe_dim) 下一步每个agent的观测长度
             next_observe_types: (num_agents, observe_dim) 下一步每个agent的观测类型
@@ -125,7 +125,7 @@ class MultiAgentReplayBuffer:
             observe_lengths: (batch_size, num_agents, observe_dim) 每个agent的观测长度
             observe_types: (batch_size, num_agents, observe_dim) 每个agent的观测类型
             actions: (batch_size, num_agents, action_dim) 每个agent的动作
-            rewards: (batch_size, num_agents) 每个agent的奖励
+            rewards: (batch_size, 1) 整个team的奖励
             next_states: (batch_size, state_dim) 下一步全局状态
             next_observe_lengths: (batch_size, num_agents, observe_dim) 下一步每个agent的观测长度
             next_observe_types: (batch_size, num_agents, observe_dim) 下一步每个agent的观测类型

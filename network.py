@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 
 #TODO:以后需要考虑归一化的问题
-#TODO:改成attention网络，最重要考虑的是让网络与智能体数量、（雷达条数）无关
+#TODO:改成attention网络，尤其是critic。最重要考虑的是让网络与智能体数量、（雷达条数）无关
 #TODO: 这并不是一个马尔科夫过程，智能体以往的观测应当影响当前的决策，需要考虑历史观测，可以试试SLAM中的关键帧思想
 
 class Actor(nn.Module):
@@ -49,10 +49,10 @@ class Critic(nn.Module):
         
         self.to(device)
     
-    def forward(self, all_state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+    def forward(self, all_state: torch.Tensor, all_action: torch.Tensor) -> torch.Tensor:
         all_state = all_state.to(self.device)
-        action = action.to(self.device)
-        x = torch.cat([all_state, action], dim=1)
+        all_action = all_action.to(self.device)
+        x = torch.cat([all_state, all_action], dim=1)
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
         x = self.l3(x)

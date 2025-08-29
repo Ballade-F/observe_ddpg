@@ -7,10 +7,17 @@ import copy
 from network import Actor, Critic
 from data_load import ReplayBuffer, MultiAgentReplayBuffer
 
-class AgentNetwork:
+
+
+class AgentTeam:
+    '''
+        集中式训练，分布式执行
+        每个agent有自己的actor，整个team共享一个critic
+        每个team有一个自己的回放buffer
+    '''
     def __init__(self, agent_state_dim: int, observe_dim: int, all_state_dim: int,
                  action_dim: int, num_agents: int, max_action: np.ndarray, 
-                 lr: float, device: torch.device
+                 lr: float, replay_buffer: MultiAgentReplayBuffer, device: torch.device
     ):
         self.hidden_dim = 256
         self.tau = 0.01 #软更新参数
@@ -22,15 +29,17 @@ class AgentNetwork:
         self.observe_dim = observe_dim
         self.all_state_dim = all_state_dim
         self.action_dim = action_dim
+        self.replay_buffer = replay_buffer
+
+        self.actors = [Actor(agent_state_dim, observe_dim, action_dim, self.hidden_dim, self.max_action, self.device) for _ in range(num_agents)]
+        self.actor_targets = [copy.deepcopy(actor) for actor in self.actors]
         
-        self.actor = Actor(agent_state_dim, observe_dim, action_dim, self.hidden_dim, self.max_action, self.device)
-        self.actor_target = copy.deepcopy(self.actor)
         # Critic的action_dim应该是所有agent的动作维度总和
         total_action_dim = action_dim * num_agents
         self.critic = Critic(all_state_dim, total_action_dim, self.hidden_dim, self.device)
         self.critic_target = copy.deepcopy(self.critic)
         
-        self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=self.lr)
+        self.actor_optimizers = [torch.optim.Adam(actor.parameters(), lr=self.lr) for actor in self.actors]
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=self.lr)
         
         self.MseLoss = nn.MSELoss()
@@ -56,7 +65,7 @@ class MADDPG:
         self.all_state_dim = all_state_dim
 
         self.agents = [
-            AgentNetwork(
+            AgentTeam(
                 self.state_dim, self.observe_dim, self.all_state_dim, self.action_dim, self.num_agents, self.max_action, self.lr, 
                 self.device
                 ) for _ in range(self.num_agents)]

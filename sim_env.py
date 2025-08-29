@@ -93,7 +93,7 @@ class SimEnv:
             next_obstacles: 下一个障碍物状态 (n_obstacles, 3) x, y, r
             next_observeStateL: 下一个观测距离 (n_agents, n_radars)
             next_observeStateType: 下一个观测类型 (n_agents, n_radars)
-            rewards: 每个智能体的奖励 (n_agents,)
+            rewards: 整个team的奖励 (1,)
             done: 是否结束
         """
         # 解析动作
@@ -125,13 +125,13 @@ class SimEnv:
         self.update_observe_state()
 
         #计算奖励 - 每个agent单独计算
-        rewards = np.zeros(self.kNumAgents)
+        rewards = 0
         for i in range(self.kNumAgents):
-            rewards[i] = self.kTimeReward  # 基础时间惩罚
+            rewards += self.kTimeReward  # 基础时间惩罚
             if self.collision_flag[i]:
-                rewards[i] += self.kCollisionReward
+                rewards += self.kCollisionReward
             elif agent_reach_goal_num[i] > 0:
-                rewards[i] += self.kGoalReward * agent_reach_goal_num[i]
+                rewards += self.kGoalReward * agent_reach_goal_num[i]
         #TODO: 分两个阶段设计奖励，初始阶段设计接近目标奖励，后期只有到达目标奖励
         
         # 检查是否结束 任意碰撞或所有目标都到达
