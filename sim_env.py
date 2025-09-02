@@ -59,7 +59,10 @@ class SimEnv:
         self.kTimeReward = config.get("reward", {}).get("kTimeReward", -0.01)
         self.kCollisionReward = config.get("reward", {}).get("kCollisionReward", -1.0)
         self.kGoalReward = config.get("reward", {}).get("kGoalReward", 1.0)
-        self.kDistReward = config.get("reward", {}).get("kDistReward", 0.01)
+        self.kDistanceReward = config.get("reward", {}).get("kDistanceReward", 0.1)
+        self.kAgentSeparationReward = config.get("reward", {}).get("kAgentSeparationReward", 0.01)
+        self.kMinAgentDistance = config.get("reward", {}).get("kMinAgentDistance", 1.0)
+        self.kMinGoalDistance = config.get("reward", {}).get("kMinGoalDistance", 0.1)
         
         
         #地图元素初始坐标
@@ -124,15 +127,8 @@ class SimEnv:
         #更新观测状态
         self.update_observe_state()
 
-        #计算奖励 - 每个agent单独计算
-        rewards = 0
-        for i in range(self.kNumAgents):
-            rewards += self.kTimeReward  # 基础时间惩罚
-            if self.collision_flag[i]:
-                rewards += self.kCollisionReward
-            elif agent_reach_goal_num[i] > 0:
-                rewards += self.kGoalReward * agent_reach_goal_num[i]
-        #TODO: 分两个阶段设计奖励，初始阶段设计接近目标奖励，后期只有到达目标奖励
+        #计算奖励 - 使用改进的奖励函数
+        rewards = self.calculate_improved_reward(agent_reach_goal_num)
         
         # 检查是否结束 任意碰撞或所有目标都到达
         done = np.any(self.collision_flag) or np.all(self.goalState[:, 2] > 0.5)
@@ -338,6 +334,75 @@ class SimEnv:
             theta += 2 * np.pi
         return theta
     
+    def get_goal_distance_reward(self, agent_pos: np.ndarray) -> float:
+        """
+        计算智能体到所有未完成目标的距离倒数和奖励
+        Args:
+            agent_pos: 智能体位置 (x, y)
+        Returns:
+            float: 距离倒数和奖励
+        """
+        unfinished_goals = self.goalState[self.goalState[:, 2] < 0.5]  # 未完成的目标
+        if len(unfinished_goals) == 0:
+            return 0.0  # 所有目标都完成了
+        
+        distances = np.linalg.norm(unfinished_goals[:, :2] - agent_pos, axis=1)
+        # 限制最小距离以避免无穷大奖励
+        distances = np.maximum(distances, self.kMinGoalDistance)
+        
+        # 计算距离倒数和
+        inverse_distances = 1.0 / distances
+        return np.sum(inverse_distances)
+    
+    def get_agent_separation_reward(self) -> float:
+        """
+        计算智能体分离奖励，鼓励智能体保持适当距离
+        Returns:
+            float: 分离奖励
+        """
+        separation_reward = 0.0
+        for i in range(self.kNumAgents):
+            for j in range(i + 1, self.kNumAgents):
+                dist = np.linalg.norm(self.agentState[i, :2] - self.agentState[j, :2])
+                if dist < self.kMinAgentDistance:
+                    # 距离过近，给予惩罚
+                    separation_reward -= self.kAgentSeparationReward * (self.kMinAgentDistance - dist)
+
+        return separation_reward
+    
+
+    
+    def calculate_improved_reward(self, agent_reach_goal_num: np.ndarray) -> float:
+        """
+        计算简化的奖励函数
+        Args:
+            agent_reach_goal_num: 每个智能体到达的目标数量
+        Returns:
+            float: 总奖励
+        """
+        total_reward = 0.0
+        
+        # 1. 基础奖励（时间惩罚、碰撞惩罚、目标完成奖励）
+        for i in range(self.kNumAgents):
+            total_reward += self.kTimeReward  # 时间惩罚
+            
+            if self.collision_flag[i]:
+                total_reward += self.kCollisionReward  # 碰撞惩罚
+            elif agent_reach_goal_num[i] > 0:
+                total_reward += self.kGoalReward * agent_reach_goal_num[i]  # 目标完成奖励
+        
+        # 2. 目标距离奖励：使用距离倒数和
+        for i in range(self.kNumAgents):
+            if not self.collision_flag[i]:  # 只对未碰撞的智能体计算
+                distance_reward = self.get_goal_distance_reward(self.agentState[i, :2])
+                total_reward += self.kDistanceReward * distance_reward
+        
+        # 3. 智能体分离奖励
+        separation_reward = self.get_agent_separation_reward()
+        total_reward += separation_reward
+        
+        return total_reward
+    
     def plot_environment(self, save_path: str = "environment.png", fig_size: Tuple[int, int] = (10, 10), dpi: int = 100):
         """
         绘制当前环境状态并保存为PNG文件
@@ -542,8 +607,137 @@ def main():
     print("Test completed! Generated initial state plot (sim_env_initial.png) and final state plot (sim_env_final.png)")
 
 
+def test_reward_function():
+    """
+    测试简化的奖励函数
+    """
+    print("=" * 60)
+    print("测试简化的奖励函数...")
+    print("=" * 60)
+    
+    # 创建测试配置
+    config = {
+        "map": {
+            "kMaxX": 5.0, "kMaxY": 5.0, "kMinX": -5.0, "kMinY": -5.0,
+            "kMaxObsR": 1.0, "kMinObsR": 0.3, "kNumAgents": 2, "kNumGoals": 3, "kNumObstacles": 2,
+            "kTimeStep": 0.1
+        },
+        "agent": {
+            "kAgentRadius": 0.2, "kMaxSpeed": 1.0, "kMaxAngularSpeed": 1.0,
+            "kNumRadars": 32, "kMaxRadarDist": 3.0
+        },
+        "goal": {"kGoalThreshold": 0.3},
+        "reward": {
+            "kTimeReward": -0.1, "kCollisionReward": -10.0, "kGoalReward": 5.0,
+            "kDistanceReward": 0.01, "kAgentSeparationReward": 0.1,
+            "kMinAgentDistance": 1.0, "kMinGoalDistance": 0.1
+        }
+    }
+    
+    # 设置随机种子
+    np.random.seed(42)
+    
+    # 创建环境
+    env = SimEnv(config)
+    print(f"✓ 环境创建成功")
+    print(f"  智能体数量: {env.kNumAgents}")
+    print(f"  目标数量: {env.kNumGoals}")
+    print(f"  障碍物数量: {env.kNumObstacles}")
+    
+    # 测试场景1：智能体远离目标
+    print(f"\n{'='*30}")
+    print("测试场景1：智能体远离目标")
+    print(f"{'='*30}")
+    
+    env.reset()
+    # 手动设置智能体位置（远离目标）
+    env.agentState[0] = [-4, -4, 0]  # 智能体0在左下角
+    env.agentState[1] = [4, 4, 0]    # 智能体1在右上角
+    
+    # 计算奖励
+    agent_reach_goal_num = np.zeros(env.kNumAgents)
+    reward1 = env.calculate_improved_reward(agent_reach_goal_num)
+    print(f"远离目标时的奖励: {reward1:.4f}")
+    
+    # 测试场景2：智能体靠近目标
+    print(f"\n{'='*30}")
+    print("测试场景2：智能体靠近目标")
+    print(f"{'='*30}")
+    
+    # 将智能体移动到目标附近
+    if len(env.goalState) > 0:
+        env.agentState[0, :2] = env.goalState[0, :2] + [0.5, 0]  # 智能体0靠近目标0
+    if len(env.goalState) > 1:
+        env.agentState[1, :2] = env.goalState[1, :2] + [0, 0.5]  # 智能体1靠近目标1
+    
+    reward2 = env.calculate_improved_reward(agent_reach_goal_num)
+    print(f"靠近目标时的奖励: {reward2:.4f}")
+    print(f"奖励改善: {reward2 - reward1:.4f}")
+    
+    # 测试场景3：智能体过于接近
+    print(f"\n{'='*30}")
+    print("测试场景3：智能体过于接近")
+    print(f"{'='*30}")
+    
+    # 将两个智能体放在很近的位置
+    env.agentState[0, :2] = [0, 0]
+    env.agentState[1, :2] = [0.2, 0]  # 距离0.2，小于最小距离1.0
+    
+    reward3 = env.calculate_improved_reward(agent_reach_goal_num)
+    print(f"智能体过近时的奖励: {reward3:.4f}")
+    
+    # 测试场景4：智能体适当分离
+    print(f"\n{'='*30}")
+    print("测试场景4：智能体适当分离")
+    print(f"{'='*30}")
+    
+    # 将智能体分开适当距离
+    env.agentState[0, :2] = [0, 0]
+    env.agentState[1, :2] = [2, 0]  # 距离2.0，大于最小距离
+    
+    reward4 = env.calculate_improved_reward(agent_reach_goal_num)
+    print(f"智能体适当分离时的奖励: {reward4:.4f}")
+    print(f"与过近情况相比改善: {reward4 - reward3:.4f}")
+    
+    # 测试场景5：智能体到达目标
+    print(f"\n{'='*30}")
+    print("测试场景5：智能体到达目标")
+    print(f"{'='*30}")
+    
+    # 模拟智能体到达目标
+    agent_reach_goal_num[0] = 1  # 智能体0到达1个目标
+    reward5 = env.calculate_improved_reward(agent_reach_goal_num)
+    print(f"到达目标时的奖励: {reward5:.4f}")
+    print(f"与未到达相比改善: {reward5 - reward4:.4f}")
+    
+    # 测试距离倒数和奖励的特性
+    print(f"\n{'='*30}")
+    print("测试距离倒数和奖励特性")
+    print(f"{'='*30}")
+    
+    env.reset()
+    # 测试单个智能体的距离奖励
+    agent_pos = np.array([0.0, 0.0])
+    distance_reward = env.get_goal_distance_reward(agent_pos)
+    print(f"智能体在原点时的距离奖励: {distance_reward:.4f}")
+    
+    # 将智能体移动到更靠近目标的位置
+    if len(env.goalState) > 0:
+        closer_pos = env.goalState[0, :2] * 0.8  # 更靠近第一个目标
+        closer_distance_reward = env.get_goal_distance_reward(closer_pos)
+        print(f"智能体靠近目标时的距离奖励: {closer_distance_reward:.4f}")
+        print(f"奖励提升: {closer_distance_reward - distance_reward:.4f}")
+    
+    print(f"\n{'='*60}")
+    print("🎉 简化奖励函数测试完成！")
+    print("✓ 距离倒数和奖励：智能体越靠近目标奖励越高")
+    print("✓ 分离奖励：智能体保持适当距离")
+    print("✓ 基础奖励：时间惩罚、碰撞惩罚、目标完成奖励")
+    print("✓ 避免无穷大：最小距离限制确保数值稳定")
+    print(f"{'='*60}")
+
 if __name__ == "__main__":
-    main()
+    test_reward_function()
         
     
     

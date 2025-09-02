@@ -17,13 +17,14 @@ class AgentTeam:
     '''
     def __init__(self, agent_state_dim: int, observe_dim: int, all_state_dim: int,
                  action_dim: int, num_agents: int, max_action: np.ndarray, 
-                 device: torch.device
+                 device: torch.device, batch_size: int = 256, gamma: float = 0.9, 
+                 tau: float = 0.01, lr: float = 1e-4
     ):
         #训练参数
-        self.batch_size = 256
-        self.gamma = 0.9
-        self.tau = 0.01
-        self.lr = 1e-4
+        self.batch_size = batch_size
+        self.gamma = gamma
+        self.tau = tau
+        self.lr = lr
 
         #网络参数
         self.hidden_dim = 256
@@ -95,7 +96,8 @@ class AgentTeam:
             Q_ = self.critic_target(batch_next_states, next_actions_concat)
             target_Q = batch_rewards + self.gamma * (1 - batch_dones) * Q_
      
-        current_Q = self.critic(batch_states, batch_actions)
+        batch_actions_concat = batch_actions.view(self.batch_size, -1) # (batch_size, num_agents*action_dim)
+        current_Q = self.critic(batch_states, batch_actions_concat)
         critic_loss = F.mse_loss(target_Q, current_Q)
         self.critic_optimizer.zero_grad()
         critic_loss.backward()
