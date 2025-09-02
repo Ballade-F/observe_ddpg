@@ -6,12 +6,14 @@ import json
 from enum import Enum
 
 class RadarObserveType(Enum):
-    Empty = 0
-    Obstacle = 1
+    UnfinishedGoal = 0
+    Empty = 1
     FinishedGoal = 2
-    UnfinishedGoal = 3
+    Obstacle = 3
     Agent = 4
     Boundary = 5
+    
+    
 
 
 
