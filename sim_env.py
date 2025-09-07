@@ -400,8 +400,8 @@ class SimEnv:
                 total_reward += self.kDistanceReward * distance_reward
         
         # 3. 智能体分离奖励
-        separation_reward = self.get_agent_separation_reward()
-        total_reward += separation_reward
+        # separation_reward = self.get_agent_separation_reward()
+        # total_reward += separation_reward
         
         return total_reward
     

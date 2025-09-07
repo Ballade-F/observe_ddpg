@@ -21,7 +21,13 @@ if not os.path.exists('models'):
 def setup_logging():
     """设置日志记录"""
     timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M")
-    log_filename = f"log/train_{timestamp}.log"
+    log_dir = f"log/train_{timestamp}"
+    
+    # 创建带时间戳的日志文件夹
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    log_filename = f"{log_dir}/training.log"
     
     logging.basicConfig(
         level=logging.INFO,
@@ -31,7 +37,9 @@ def setup_logging():
             logging.StreamHandler()
         ]
     )
-    return logging.getLogger(__name__)
+    
+    # 返回logger和日志目录路径
+    return logging.getLogger(__name__), log_dir
 
 def add_exploration_noise(actions, noise_std):
     """添加探索噪声"""
@@ -50,11 +58,20 @@ def get_global_state(env):
 
 def train():
     # 加载配置
-    config = json.load(open('F:\MARL\observe_ddpg\config.json', 'r'))
+    config_path = 'F:\MARL\observe_ddpg\config.json'
+    config = json.load(open(config_path, 'r'))
     
     # 设置日志
-    logger = setup_logging()
+    logger, log_dir = setup_logging()
+    
+    # 在日志文件夹中保存配置文件副本
+    config_copy_path = f"{log_dir}/config.json"
+    with open(config_copy_path, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+    
     logger.info("开始训练 MADDPG...")
+    logger.info(f"日志目录: {log_dir}")
+    logger.info(f"配置文件已保存到: {config_copy_path}")
     logger.info(f"配置参数: {config}")
     
     # 设置随机种子
@@ -94,7 +111,9 @@ def train():
         batch_size=config["training"]["batch_size"],
         gamma=config["training"]["gamma"],
         tau=config["training"]["tau"],
-        lr=config["training"]["learning_rate"]
+        lr=config["training"]["learning_rate"],
+        lr_decay=config["training"]["lr_decay"],
+        min_lr=config["training"]["min_learning_rate"]
     )
     
     logger.info("智能体团队创建成功")
@@ -119,16 +138,33 @@ def train():
     noise_std = config["training"]["noise_std"]
     noise_decay = config["training"]["noise_decay"]
     min_noise_std = config["training"]["min_noise_std"]
+    smart_noise_control = config["training"]["smart_noise_control"]
+    noise_disabled = False  # 智能噪声控制标志
     
     # 记录训练过程的变量（使用固定长度列表节省内存）
     from collections import deque
     episode_rewards = deque(maxlen=log_interval)
     episode_steps = deque(maxlen=log_interval)
     success_episodes = deque(maxlen=log_interval)
+    completed_goals = deque(maxlen=log_interval)  # 记录每个episode完成的任务点个数
     
     # 用于跟踪最佳成功率的变量
     best_success_rate = 0.0
     episodes_since_last_save = 0
+    
+    # 保存初始环境状态图
+    logger.info("保存初始环境状态图...")
+    try:
+        # 创建图像保存目录
+        if not os.path.exists('images'):
+            os.makedirs('images')
+        
+        # 保存初始状态图
+        initial_plot_path = "images/initial_environment_state.png"
+        env.plot_environment(save_path=initial_plot_path, fig_size=(12, 10), dpi=150)
+        logger.info(f"初始环境状态图已保存到: {initial_plot_path}")
+    except Exception as e:
+        logger.warning(f"保存初始环境状态图失败: {str(e)}")
     
     logger.info("开始训练循环...")
     start_time = time.time()
@@ -154,8 +190,8 @@ def train():
                 current_observe_types
             )
             
-            # 添加探索噪声
-            if noise_std > min_noise_std:
+            # 添加探索噪声（智能噪声控制）
+            if not noise_disabled and noise_std > min_noise_std:
                 actions = add_exploration_noise(actions, noise_std)
                 # 限制动作范围
                 actions[:, 0] = np.clip(actions[:, 0], -env.kMaxSpeed, env.kMaxSpeed)
@@ -163,6 +199,13 @@ def train():
             
             # 执行动作
             next_agent_state, next_goal_state, next_obstacles, next_observe_lengths, next_observe_types, reward, done = env.step(actions)
+            
+            # 智能噪声控制：检查是否有任务点被完成
+            if smart_noise_control and not noise_disabled:
+                # 检查是否有任何目标被完成（goalState[:, 2] > 0.5表示已完成）
+                if np.any(env.goalState[:, 2] > 0.5):
+                    noise_disabled = True
+                    logger.info(f"Episode {episode+1}, Step {step+1}: 检测到任务点完成，停止添加噪声")
             
             # 获取下一步全局状态
             next_global_state = get_global_state(env)
@@ -198,13 +241,19 @@ def train():
                     success = True
                 break
         
-        # 衰减噪声
-        noise_std = max(min_noise_std, noise_std * noise_decay)
+        # 统计完成的任务点个数
+        num_completed_goals = np.sum(env.goalState[:, 2] > 0.5)
+
+        
+        # 衰减噪声（如果没有启用智能噪声控制或者噪声未被禁用）
+        if not smart_noise_control or not noise_disabled:
+            noise_std = max(min_noise_std, noise_std * noise_decay)
         
         # 记录训练数据（deque自动维护固定长度）
         episode_rewards.append(episode_reward)
         episode_steps.append(episode_step)
         success_episodes.append(success)
+        completed_goals.append(num_completed_goals)
         
         episode_time = time.time() - episode_start_time
         episodes_since_last_save += 1
@@ -214,11 +263,17 @@ def train():
             avg_reward = np.mean(episode_rewards)  # deque已经是固定长度
             avg_steps = np.mean(episode_steps)
             success_rate = np.mean(success_episodes)
+            avg_completed_goals = np.mean(completed_goals)
+            current_lr = agent_team.get_current_learning_rate()
+            # 学习率衰减
+            agent_team.decay_learning_rate()
             
             logger.info(f"Episode {episode+1}/{max_episodes} - "
                        f"平均奖励: {avg_reward:.3f}, "
                        f"平均步数: {avg_steps:.1f}, "
                        f"成功率: {success_rate:.3f}, "
+                       f"平均完成任务点: {avg_completed_goals:.2f}, "
+                       f"学习率: {current_lr:.6f}, "
                        f"噪声标准差: {noise_std:.4f}, "
                        f"用时: {episode_time:.2f}s")
             
@@ -264,16 +319,24 @@ def train():
     final_avg_reward = np.mean(episode_rewards) if len(episode_rewards) > 0 else 0.0
     final_avg_steps = np.mean(episode_steps) if len(episode_steps) > 0 else 0.0
     final_success_rate = np.mean(success_episodes) if len(success_episodes) > 0 else 0.0
+    final_avg_completed_goals = np.mean(completed_goals) if len(completed_goals) > 0 else 0.0
+    final_lr = agent_team.get_current_learning_rate()
     
     logger.info("=== 最终训练统计 ===")
     logger.info(f"最后{len(episode_rewards)}轮平均奖励: {final_avg_reward:.3f}")
     logger.info(f"最后{len(episode_steps)}轮平均步数: {final_avg_steps:.1f}")
     logger.info(f"最后{len(success_episodes)}轮成功率: {final_success_rate:.3f}")
+    logger.info(f"最后{len(completed_goals)}轮平均完成任务点: {final_avg_completed_goals:.2f}")
+    logger.info(f"最终学习率: {final_lr:.6f}")
+    logger.info(f"最终噪声标准差: {noise_std:.4f}")
     logger.info(f"历史最佳成功率: {best_success_rate:.3f}")
     logger.info(f"总训练轮数: {max_episodes}")
     if len(episode_rewards) > 0:
         logger.info(f"最近轮次最高奖励: {np.max(episode_rewards):.3f}")
         logger.info(f"最近轮次最低奖励: {np.min(episode_rewards):.3f}")
+    if len(completed_goals) > 0:
+        logger.info(f"最近轮次最多完成任务点: {int(np.max(completed_goals))}")
+        logger.info(f"最近轮次最少完成任务点: {int(np.min(completed_goals))}")
     logger.info("训练结束！")
 
 if __name__ == "__main__":

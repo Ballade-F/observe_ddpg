@@ -18,13 +18,17 @@ class AgentTeam:
     def __init__(self, agent_state_dim: int, observe_dim: int, all_state_dim: int,
                  action_dim: int, num_agents: int, max_action: np.ndarray, 
                  device: torch.device, batch_size: int = 256, gamma: float = 0.9, 
-                 tau: float = 0.01, lr: float = 1e-4
+                 tau: float = 0.01, lr: float = 1e-4, lr_decay: float = 0.999, 
+                 min_lr: float = 1e-5
     ):
         #训练参数
         self.batch_size = batch_size
         self.gamma = gamma
         self.tau = tau
         self.lr = lr
+        self.lr_decay = lr_decay
+        self.min_lr = min_lr
+        self.current_lr = lr
 
         #网络参数
         self.hidden_dim = 256
@@ -139,4 +143,18 @@ class AgentTeam:
             for param, target_param in zip(actor.parameters(), self.actor_targets[idx].parameters()):
                 target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
-
+    def decay_learning_rate(self):
+        """衰减学习率"""
+        self.current_lr = max(self.min_lr, self.current_lr * self.lr_decay)
+        
+        # 更新所有优化器的学习率
+        for optimizer in self.actor_optimizers:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = self.current_lr
+        
+        for param_group in self.critic_optimizer.param_groups:
+            param_group['lr'] = self.current_lr
+    
+    def get_current_learning_rate(self):
+        """获取当前学习率"""
+        return self.current_lr

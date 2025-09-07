@@ -16,9 +16,22 @@ class Actor(nn.Module):
 
         self.l1 = nn.Linear(self_state_dim + 2*observe_state_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
-        self.l3 = nn.Linear(hidden_dim, action_dim)
+        self.l3 = nn.Linear(hidden_dim, hidden_dim)
+        self.l4 = nn.Linear(hidden_dim, action_dim)
+        
+        # Kaiming初始化
+        self._init_weights()
         
         self.to(device)
+    
+    def _init_weights(self):
+        """Kaiming初始化"""
+        for layer in [self.l1, self.l2, self.l3]:
+            nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
+            nn.init.constant_(layer.bias, 0)
+        # 输出层使用较小的初始化
+        nn.init.uniform_(self.l4.weight, -3e-3, 3e-3)
+        nn.init.constant_(self.l4.bias, 0)
     
     def forward(self, self_state: torch.Tensor, observe_length: torch.Tensor, observe_type: torch.Tensor) -> torch.Tensor:
         '''
@@ -32,7 +45,8 @@ class Actor(nn.Module):
         x = torch.cat([self_state, observe_length, observe_type], dim=1)    
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
-        x = torch.mul(self.max_action.to(self.device), torch.tanh(self.l3(x)))
+        x = F.relu(self.l3(x))
+        x = torch.mul(self.max_action.to(self.device), torch.tanh(self.l4(x)))
         return x
 
 class Critic(nn.Module):
@@ -45,9 +59,22 @@ class Critic(nn.Module):
         # 即 3*num_agents + 3*num_goals + 3*num_obstacles
         self.l1 = nn.Linear(all_state_dim + all_action_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
-        self.l3 = nn.Linear(hidden_dim, 1)
+        self.l3 = nn.Linear(hidden_dim, hidden_dim)
+        self.l4 = nn.Linear(hidden_dim, 1)
+        
+        # Kaiming初始化
+        self._init_weights()
         
         self.to(device)
+    
+    def _init_weights(self):
+        """Kaiming初始化"""
+        for layer in [self.l1, self.l2, self.l3]:
+            nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
+            nn.init.constant_(layer.bias, 0)
+        # 输出层使用较小的初始化
+        nn.init.uniform_(self.l4.weight, -3e-3, 3e-3)
+        nn.init.constant_(self.l4.bias, 0)
     
     def forward(self, all_state: torch.Tensor, all_action: torch.Tensor) -> torch.Tensor:
         all_state = all_state.to(self.device)
@@ -55,7 +82,8 @@ class Critic(nn.Module):
         x = torch.cat([all_state, all_action], dim=1)
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
-        x = self.l3(x)
+        x = F.relu(self.l3(x))
+        x = self.l4(x)
         return x
     
 def test_network():
