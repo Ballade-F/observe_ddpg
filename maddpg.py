@@ -158,3 +158,32 @@ class AgentTeam:
     def get_current_learning_rate(self):
         """获取当前学习率"""
         return self.current_lr
+    
+    def load_models(self, model_dir: str):
+        """
+        加载训练好的模型
+        Args:
+            model_dir: 模型文件夹路径
+        """
+        print(f"正在加载模型从: {model_dir}")
+        
+        # 加载所有actor网络
+        for i in range(self.num_agents):
+            actor_path = os.path.join(model_dir, f"actor_{i}.pth")
+            if os.path.exists(actor_path):
+                self.actors[i].load_state_dict(torch.load(actor_path, map_location=self.device))
+                self.actors[i].eval()  # 设置为评估模式
+                print(f"已加载 Actor {i} 模型: {actor_path}")
+            else:
+                raise FileNotFoundError(f"找不到Actor {i}模型文件: {actor_path}")
+        
+        # 加载critic网络（评估时不一定需要，但为了完整性还是加载）
+        critic_path = os.path.join(model_dir, "critic.pth")
+        if os.path.exists(critic_path):
+            self.critic.load_state_dict(torch.load(critic_path, map_location=self.device))
+            self.critic.eval()  # 设置为评估模式
+            print(f"已加载 Critic 模型: {critic_path}")
+        else:
+            print(f"警告：找不到Critic模型文件: {critic_path}")
+        
+        print("模型加载完成！")

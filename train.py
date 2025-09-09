@@ -58,7 +58,7 @@ def get_global_state(env):
 
 def train():
     # 加载配置
-    config_path = 'F:\MARL\observe_ddpg\config.json'
+    config_path = './config.json'
     config = json.load(open(config_path, 'r'))
     
     # 设置日志

@@ -1,0 +1,41 @@
+{
+    "map": {
+        "kMaxX": 5.0,
+        "kMaxY": 5.0,
+        "kMinX": -5.0,
+        "kMinY": -5.0,
+        "kMaxObsR": 1.0,
+        "kMinObsR": 0.3,
+        "kNumAgents": 2,
+        "kNumGoals": 5,
+        "kNumObstacles": 3,
+        "kTimeStep": 0.1
+    },
+    "agent": {
+        "kAgentRadius": 0.2,
+        "kMaxSpeed": 1.0,
+        "kMaxAngularSpeed": 1.0,
+        "kNumRadars": 32,
+        "kMaxRadarDist": 3.0
+    },
+    "goal": {
+        "kGoalThreshold": 0.3
+    },
+    "reward": {
+        "kTimeReward": -0.1,
+        "kCollisionReward": -100.0,
+        "kGoalReward": 100.0,
+        "kDistanceReward": 0.1,
+        "kAgentSeparationReward": 0.1,
+        "kMinAgentDistance": 1.0,
+        "kMinGoalDistance": 0.1
+    },
+    "evaluation": {
+        "model_dir": "models/final",
+        "max_steps": 1000,
+        "device": "cuda",
+        "animation_interval": 50,
+        "save_animation": false,
+        "animation_path": "evaluation_animation.gif"
+    }
+}
