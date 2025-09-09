@@ -30,8 +30,12 @@
         "kMinAgentDistance": 1.0,
         "kMinGoalDistance": 0.1
     },
+    "training": {
+        "random_exploration_episodes": 200,
+        "device": "cuda"
+    },
     "evaluation": {
-        "model_dir": "models/final",
+        "model_dir": "log/train_YYYY-MM-DD-HH-MM/best_model",
         "max_steps": 1000,
         "device": "cuda",
         "animation_interval": 50,

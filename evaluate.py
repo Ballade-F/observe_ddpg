@@ -11,8 +11,18 @@ warnings.filterwarnings('ignore')
 from maddpg import AgentTeam
 from sim_env import SimEnv
 
+def get_global_state(env):
+    """构建全局状态"""
+    # 全局状态包括：所有agent状态 + 所有目标状态 + 所有障碍物状态
+    agent_states = env.agentState.flatten()  # (num_agents * 3,)
+    goal_states = env.goalState.flatten()    # (num_goals * 3,)
+    obstacle_states = env.obstacles.flatten() # (num_obstacles * 3,)
+    
+    global_state = np.concatenate([agent_states, goal_states, obstacle_states])
+    return global_state
 
-def plot_realtime_environment(env, ax, frame_num, step_count, reward_history, goal_completion):
+
+def plot_realtime_environment(env, ax, frame_num, step_count, reward_history, goal_completion, critic_values=None):
     """
     实时绘制环境状态
     Args:
@@ -30,9 +40,9 @@ def plot_realtime_environment(env, ax, frame_num, step_count, reward_history, go
     ax.set_ylim(env.kMinY - 0.5, env.kMaxY + 0.5)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
-    ax.set_xlabel('X坐标')
-    ax.set_ylabel('Y坐标')
-    ax.set_title(f'多智能体环境评估 - 步数: {step_count}, 帧数: {frame_num}')
+    ax.set_xlabel('X Coordinate')
+    ax.set_ylabel('Y Coordinate')
+    ax.set_title(f'Multi-Agent Environment Evaluation - Step: {step_count}, Frame: {frame_num}')
     
     # 绘制地图边界
     boundary_rect = plt.Rectangle((env.kMinX, env.kMinY), 
@@ -91,9 +101,19 @@ def plot_realtime_environment(env, ax, frame_num, step_count, reward_history, go
     # 添加状态信息文本
     completed_goals = np.sum(env.goalState[:, 2] > 0.5)
     total_goals = len(env.goalState)
-    info_text = f'已完成目标: {completed_goals}/{total_goals}'
+    info_text = f'Completed Goals: {completed_goals}/{total_goals}'
     if len(reward_history) > 0:
-        info_text += f'\n累积奖励: {sum(reward_history):.2f}'
+        info_text += f'\nCumulative Reward: {sum(reward_history):.2f}'
+    
+    # 添加Critic值信息
+    if critic_values is not None and len(critic_values) > 0:
+        # 显示当前步的Critic值
+        current_critic_value = critic_values[-1][0] if len(critic_values[-1]) > 0 else 0.0
+        # 显示历史平均Critic值
+        all_critic_values = [cv[0] for cv in critic_values if len(cv) > 0]
+        avg_critic_value = np.mean(all_critic_values) if all_critic_values else 0.0
+        info_text += f'\nCurrent Critic: {current_critic_value:.3f}'
+        info_text += f'\nAvg Critic: {avg_critic_value:.3f}'
     
     ax.text(0.02, 0.98, info_text, transform=ax.transAxes, 
            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
@@ -122,7 +142,7 @@ def evaluate():
     print(f"配置参数: {config}")
     
     # 设置随机种子以保证可重现性
-    seed = 42
+    seed = 0
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -181,12 +201,13 @@ def evaluate():
     step_count = 0
     reward_history = []
     goal_completion_history = []
+    critic_values_history = []
     
     # 创建动画
     fig, ax = plt.subplots(figsize=(12, 10))
     
     def update_animation(frame):
-        nonlocal step_count, reward_history, goal_completion_history
+        nonlocal step_count, reward_history, goal_completion_history, critic_values_history
         
         if step_count >= max_steps:
             ani.event_source.stop()
@@ -200,6 +221,15 @@ def evaluate():
             env.observeStateType
         )
         
+        # 计算Critic值
+        global_state = get_global_state(env)
+        global_state_tensor = torch.FloatTensor(global_state).unsqueeze(0).to(device)
+        actions_tensor = torch.FloatTensor(actions.flatten()).unsqueeze(0).to(device)
+        
+        with torch.no_grad():
+            critic_value = agent_team.critic(global_state_tensor, actions_tensor).cpu().numpy().flatten()
+        critic_values_history.append(critic_value)
+        
         # 执行动作
         next_agent_state, next_goal_state, next_obstacles, next_observe_lengths, next_observe_types, reward, done = env.step(actions)
         
@@ -212,7 +242,7 @@ def evaluate():
         step_count += 1
         
         # 绘制当前状态
-        plot_realtime_environment(env, ax, frame, step_count, reward_history, goal_completion_history)
+        plot_realtime_environment(env, ax, frame, step_count, reward_history, goal_completion_history, critic_values_history)
         
         # 检查是否完成任务
         if done:
@@ -226,7 +256,8 @@ def evaluate():
             print(f"任务成功: {'是' if success else '否'}")
             
             # 在图上显示最终结果
-            result_text = f'评估完成!\n总步数: {step_count}\n累积奖励: {total_reward:.2f}\n完成目标: {completed_goals}/{len(env.goalState)}\n任务成功: {"是" if success else "否"}'
+            avg_critic = np.mean([np.mean(cv) for cv in critic_values_history]) if critic_values_history else 0.0
+            result_text = f'Evaluation Complete!\nTotal Steps: {step_count}\nCumulative Reward: {total_reward:.2f}\nCompleted Goals: {completed_goals}/{len(env.goalState)}\nAvg Critic Value: {avg_critic:.3f}\nTask Success: {"Yes" if success else "No"}'
             ax.text(0.5, 0.02, result_text, transform=ax.transAxes, 
                    ha='center', va='bottom', 
                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8),
