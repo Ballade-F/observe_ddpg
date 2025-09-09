@@ -35,7 +35,7 @@
         "device": "cuda"
     },
     "evaluation": {
-        "model_dir": "log/train_YYYY-MM-DD-HH-MM/best_model",
+        "model_dir": "log/train_2025-09-09-18-37/best_model",
         "max_steps": 1000,
         "device": "cuda",
         "animation_interval": 50,
