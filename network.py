@@ -14,10 +14,20 @@ class Actor(nn.Module):
         self.max_action = torch.FloatTensor(max_action)
         self.device = device
 
-        self.l1 = nn.Linear(self_state_dim + 2*observe_state_dim, hidden_dim)
+        # RadarObserveType有6种类型：UnfinishedGoal=0, Empty=1, FinishedGoal=2, Obstacle=3, Agent=4, Boundary=5
+        self.num_radar_types = 6
+        self.radar_type_embed_dim = 4  # embedding维度
+        self.observe_state_dim = observe_state_dim
+        
+        # 为雷达类型创建embedding层
+        self.radar_type_embedding = nn.Embedding(self.num_radar_types, self.radar_type_embed_dim)
+        
+        # 输入维度：self_state + observe_length + embedded_observe_type
+        input_dim = self_state_dim + observe_state_dim + observe_state_dim * self.radar_type_embed_dim
+        
+        self.l1 = nn.Linear(input_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
-        self.l3 = nn.Linear(hidden_dim, hidden_dim)
-        self.l4 = nn.Linear(hidden_dim, action_dim)
+        self.l3 = nn.Linear(hidden_dim, action_dim)
         
         # Kaiming初始化
         self._init_weights()
@@ -26,12 +36,15 @@ class Actor(nn.Module):
     
     def _init_weights(self):
         """Kaiming初始化"""
-        for layer in [self.l1, self.l2, self.l3]:
+        for layer in [self.l1, self.l2]:
             nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
             nn.init.constant_(layer.bias, 0)
         # 输出层使用较小的初始化
-        nn.init.uniform_(self.l4.weight, -3e-3, 3e-3)
-        nn.init.constant_(self.l4.bias, 0)
+        nn.init.uniform_(self.l3.weight, -3e-3, 3e-3)
+        nn.init.constant_(self.l3.bias, 0)
+        
+        # 初始化embedding层
+        nn.init.xavier_uniform_(self.radar_type_embedding.weight)
     
     def forward(self, self_state: torch.Tensor, observe_length: torch.Tensor, observe_type: torch.Tensor) -> torch.Tensor:
         '''
@@ -42,11 +55,24 @@ class Actor(nn.Module):
         self_state = self_state.to(self.device)
         observe_length = observe_length.to(self.device)
         observe_type = observe_type.to(self.device)
-        x = torch.cat([self_state, observe_length, observe_type], dim=1)    
+        
+        # 将observe_type转换为long类型用于embedding
+        observe_type_long = observe_type.long()
+        
+        # 通过embedding层处理雷达类型
+        # observe_type_long: (batch_size, observe_state_dim)
+        # embedded_observe_type: (batch_size, observe_state_dim, radar_type_embed_dim)
+        embedded_observe_type = self.radar_type_embedding(observe_type_long)
+        
+        # 将embedding展平
+        # embedded_observe_type_flat: (batch_size, observe_state_dim * radar_type_embed_dim)
+        embedded_observe_type_flat = embedded_observe_type.view(embedded_observe_type.size(0), -1)
+        
+        # 拼接所有特征
+        x = torch.cat([self_state, observe_length, embedded_observe_type_flat], dim=1)    
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
-        x = F.relu(self.l3(x))
-        x = torch.mul(self.max_action.to(self.device), torch.tanh(self.l4(x)))
+        x = torch.mul(self.max_action.to(self.device), torch.tanh(self.l3(x)))
         return x
 
 class Critic(nn.Module):
