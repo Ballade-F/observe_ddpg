@@ -1,0 +1,7 @@
+{
+    "model_path": "./log/mappo_train_latest/best_model",
+    "num_episodes": 100,
+    "render": false,
+    "save_trajectories": true,
+    "max_trajectory_saves": 10
+}
