@@ -143,7 +143,7 @@ def run_single_environment(env_id: int, config: dict, agent: MAPPOAgent,
 
 def train():
     # 加载配置
-    config_path = './config.json'
+    config_path = 'E:\project\RL\observe_ddpg\mappo\config.json'
     config = json.load(open(config_path, 'r'))
     
     # 设置日志

@@ -1,0 +1,51 @@
+{
+  "map": {
+    "kMaxX": 5.0,
+    "kMaxY": 5.0,
+    "kMinX": -5.0,
+    "kMinY": -5.0,
+    "kMaxObsR": 1.0,
+    "kMinObsR": 0.3,
+    "kNumAgents": 2,
+    "kNumGoals": 5,
+    "kNumObstacles": 3,
+    "kTimeStep": 0.1
+  },
+  "agent": {
+    "kAgentRadius": 0.2,
+    "kMaxSpeed": 1.0,
+    "kMaxAngularSpeed": 1.0,
+    "kNumRadars": 32,
+    "kMaxRadarDist": 3.0
+  },
+  "goal": {
+    "kGoalThreshold": 0.3
+  },
+  "reward": {
+    "kTimeReward": -0.1,
+    "kCollisionReward": -100.0,
+    "kGoalReward": 100.0,
+    "kDistanceReward": 0.1,
+    "kAgentSeparationReward": 0.1,
+    "kMinAgentDistance": 1.0,
+    "kMinGoalDistance": 0.1
+  },
+  "training": {
+    "max_episodes": 1000,
+    "max_steps_per_episode": 500,
+    "buffer_size": 100000,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "lr_decay": 0.99,
+    "min_learning_rate": 0.0001,
+    "gamma": 0.95,
+    "tau": 0.01,
+    "noise_std": 0.1,
+    "noise_decay": 0.995,
+    "min_noise_std": 0.01,
+    "smart_noise_control": true,
+    "save_interval": 500,
+    "log_interval": 10,
+    "device": "cuda"
+  }
+}
