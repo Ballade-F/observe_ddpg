@@ -1,0 +1,14 @@
+2025-09-09 18:29:44,357 - INFO - 开始训练 MADDPG...
+2025-09-09 18:29:44,358 - INFO - 日志目录: log/train_2025-09-09-18-29
+2025-09-09 18:29:44,358 - INFO - 配置文件已保存到: log/train_2025-09-09-18-29/config.json
+2025-09-09 18:29:44,358 - INFO - 配置参数: {'map': {'kMaxX': 5.0, 'kMaxY': 5.0, 'kMinX': -5.0, 'kMinY': -5.0, 'kMaxObsR': 1.0, 'kMinObsR': 0.3, 'kNumAgents': 2, 'kNumGoals': 5, 'kNumObstacles': 3, 'kTimeStep': 0.1}, 'agent': {'kAgentRadius': 0.2, 'kMaxSpeed': 1.0, 'kMaxAngularSpeed': 1.0, 'kNumRadars': 32, 'kMaxRadarDist': 3.0}, 'goal': {'kGoalThreshold': 0.3}, 'reward': {'kTimeReward': -0.1, 'kCollisionReward': -100.0, 'kGoalReward': 100.0, 'kDistanceReward': 0.1, 'kAgentSeparationReward': 0.1, 'kMinAgentDistance': 1.0, 'kMinGoalDistance': 0.1}, 'training': {'max_episodes': 1000, 'max_steps_per_episode': 500, 'buffer_size': 100000, 'batch_size': 256, 'learning_rate': 2e-05, 'lr_decay': 0.99, 'min_learning_rate': 5e-06, 'gamma': 0.95, 'tau': 0.01, 'noise_std': 0.1, 'noise_decay': 0.995, 'min_noise_std': 0.01, 'smart_noise_control': True, 'random_exploration_episodes': 50, 'save_interval': 500, 'log_interval': 10, 'device': 'cuda'}}
+2025-09-09 18:29:44,384 - INFO - 使用设备: cuda
+2025-09-09 18:29:44,391 - INFO - 环境创建成功 - Agent数量: 2, 目标数量: 5, 障碍物数量: 3
+2025-09-09 18:29:44,391 - INFO - 状态维度 - Agent状态: 3, 观测维度: 32, 动作维度: 2
+2025-09-09 18:29:44,392 - INFO - 全局状态维度: 30, 最大动作: [1. 1.]
+2025-09-09 18:29:45,682 - INFO - 智能体团队创建成功
+2025-09-09 18:29:45,682 - INFO - 经验回放缓冲区创建成功
+2025-09-09 18:29:45,682 - INFO - 保存初始环境状态图...
+2025-09-09 18:29:46,387 - INFO - 初始环境状态图已保存到: images/initial_environment_state.png
+2025-09-09 18:29:46,388 - INFO - 开始训练循环...
+2025-09-09 18:29:46,388 - INFO - 前50轮将使用纯随机游走策略，不执行actor网络和学习
