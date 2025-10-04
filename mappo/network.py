@@ -81,8 +81,11 @@ class Actor(nn.Module):
         std = torch.exp(log_std)
         
         # 缩放到动作范围
+        # TODO: 需要考虑归一化的问题
         mean = torch.tanh(mean) * self.max_action.to(self.device)
         
+        # mean: (batch_size, action_dim)
+        # std: (batch_size, action_dim)
         return mean, std
     
     def get_action_and_log_prob(self, self_state: torch.Tensor, observe_length: torch.Tensor, 
@@ -100,11 +103,10 @@ class Actor(nn.Module):
             dist = Normal(mean, std)
             # 采样动作
             action = dist.sample()
-            # 计算对数概率
-            log_prob = dist.log_prob(action).sum(dim=-1, keepdim=True)
-            
             # 限制动作范围
             action = torch.clamp(action, -self.max_action.to(self.device), self.max_action.to(self.device))
+            # 计算对数概率,shape: (batch_size, action_dim)
+            log_prob = dist.log_prob(action)
         
         return action, log_prob
     
@@ -127,15 +129,16 @@ class Actor(nn.Module):
         return log_prob, entropy
 
 class Critic(nn.Module):
-    def __init__(self, all_state_dim: int, hidden_dim: int, device: torch.device):
+    def __init__(self, all_state_dim: int, hidden_dim: int, device: torch.device, agent_n: int):
         super(Critic, self).__init__()
         self.device = device
 
         # MAPPO的Critic只需要全局状态，不需要动作
+        self.agent_n = agent_n
         self.l1 = nn.Linear(all_state_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
         self.l3 = nn.Linear(hidden_dim, hidden_dim)
-        self.value_head = nn.Linear(hidden_dim, 1)
+        self.value_head = nn.Linear(hidden_dim, agent_n)
         
         # Kaiming初始化
         self._init_weights()
@@ -156,7 +159,7 @@ class Critic(nn.Module):
         x = F.relu(self.l1(all_state))
         x = F.relu(self.l2(x))
         x = F.relu(self.l3(x))
-        value = self.value_head(x)
+        value = self.value_head(x) # [batch_size, agent_n]
         return value
 
 def test_network():

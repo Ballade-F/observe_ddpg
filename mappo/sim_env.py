@@ -374,36 +374,36 @@ class SimEnv:
     
 
     
-    def calculate_improved_reward(self, agent_reach_goal_num: np.ndarray) -> float:
+    def calculate_improved_reward(self, agent_reach_goal_num: np.ndarray) -> np.ndarray:
         """
         计算简化的奖励函数
         Args:
             agent_reach_goal_num: 每个智能体到达的目标数量
         Returns:
-            float: 总奖励
+            np.ndarray: 每个智能体的奖励，shape=(kNumAgents,)
         """
-        total_reward = 0.0
+        rewards = np.zeros(self.kNumAgents)
         
         # 1. 基础奖励（时间惩罚、碰撞惩罚、目标完成奖励）
         for i in range(self.kNumAgents):
-            total_reward += self.kTimeReward  # 时间惩罚
+            rewards[i] += self.kTimeReward  # 时间惩罚
             
             if self.collision_flag[i]:
-                total_reward += self.kCollisionReward  # 碰撞惩罚
+                rewards[i] += self.kCollisionReward  # 碰撞惩罚
             elif agent_reach_goal_num[i] > 0:
-                total_reward += self.kGoalReward * agent_reach_goal_num[i]  # 目标完成奖励
+                rewards[i] += self.kGoalReward * agent_reach_goal_num[i]  # 目标完成奖励
         
         # 2. 目标距离奖励：使用距离倒数和
         for i in range(self.kNumAgents):
             if not self.collision_flag[i]:  # 只对未碰撞的智能体计算
                 distance_reward = self.get_goal_distance_reward(self.agentState[i, :2])
-                total_reward += self.kDistanceReward * distance_reward
+                rewards[i] += self.kDistanceReward * distance_reward
         
-        # 3. 智能体分离奖励
+        # 3. 智能体分离奖励（可选）
         # separation_reward = self.get_agent_separation_reward()
-        # total_reward += separation_reward
+        # rewards += separation_reward / self.kNumAgents  # 平均分配给所有智能体
         
-        return total_reward
+        return rewards
     
     def plot_environment(self, save_path: str = "environment.png", fig_size: Tuple[int, int] = (10, 10), dpi: int = 100):
         """

@@ -6,9 +6,9 @@
         "kMinY": -5.0,
         "kMaxObsR": 1.0,
         "kMinObsR": 0.3,
-        "kNumAgents": 2,
+        "kNumAgents": 3,
         "kNumGoals": 5,
-        "kNumObstacles": 3,
+        "kNumObstacles": 4,
         "kTimeStep": 0.1
     },
     "agent": {
@@ -22,30 +22,13 @@
         "kGoalThreshold": 0.3
     },
     "reward": {
-        "kTimeReward": -0.1,
-        "kCollisionReward": -100.0,
-        "kGoalReward": 100.0,
+        "kTimeReward": -0.01,
+        "kCollisionReward": -1.0,
+        "kGoalReward": 1.0,
         "kDistanceReward": 0.1,
-        "kAgentSeparationReward": 0.1,
+        "kAgentSeparationReward": 0.01,
         "kMinAgentDistance": 1.0,
         "kMinGoalDistance": 0.1
-    },
-    "training": {
-        "max_episodes": 2000,
-        "max_steps_per_episode": 500,
-        "batch_size": 64,
-        "learning_rate": 0.0003,
-        "gamma": 0.99,
-        "lam": 0.95,
-        "eps_clip": 0.2,
-        "k_epochs": 10,
-        "entropy_coef": 0.01,
-        "value_coef": 0.5,
-        "max_grad_norm": 0.5,
-        "num_envs": 1,
-        "update_interval": 10,
-        "save_interval": 500,
-        "log_interval": 20,
-        "device": "cuda"
     }
 }
+
