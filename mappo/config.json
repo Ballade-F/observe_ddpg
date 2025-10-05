@@ -6,9 +6,9 @@
         "kMinY": -5.0,
         "kMaxObsR": 1.0,
         "kMinObsR": 0.3,
-        "kNumAgents": 3,
+        "kNumAgents": 2,
         "kNumGoals": 5,
-        "kNumObstacles": 4,
+        "kNumObstacles": 3,
         "kTimeStep": 0.1
     },
     "agent": {
@@ -22,13 +22,27 @@
         "kGoalThreshold": 0.3
     },
     "reward": {
-        "kTimeReward": -0.01,
-        "kCollisionReward": -1.0,
-        "kGoalReward": 1.0,
+        "kTimeReward": -0.0,
+        "kCollisionReward": -100.0,
+        "kGoalReward": 100.0,
         "kDistanceReward": 0.1,
-        "kAgentSeparationReward": 0.01,
+        "kAgentSeparationReward": 0.1,
         "kMinAgentDistance": 1.0,
         "kMinGoalDistance": 0.1
+    },
+    "training": {
+        "step_max": 200,
+        "episode_limit": 200,
+        "batch_size": 32,
+        "gamma": 0.99,
+        "lamda": 0.95,
+        "epsilon": 0.2,
+        "device": "cuda",
+        "actor_lr": 3e-4,
+        "critic_lr": 3e-4
+    },
+    "network": {
+        "hidden_dim": 256
     }
 }
 

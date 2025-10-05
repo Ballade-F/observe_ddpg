@@ -98,7 +98,7 @@ class SimEnv:
             next_obstacles: 下一个障碍物状态 (n_obstacles, 3) x, y, r
             next_observeStateL: 下一个观测距离 (n_agents, n_radars)
             next_observeStateType: 下一个观测类型 (n_agents, n_radars)
-            rewards: 整个team的奖励 (1,)
+            rewards: 整个team的奖励 (n_agents,)
             done: 是否结束
         """
         # 解析动作

@@ -250,7 +250,7 @@ def test_network():
         print("测试Critic网络...")
         print(f"{'='*30}")
         
-        critic = Critic(all_state_dim, hidden_dim, device)
+        critic = Critic(all_state_dim, hidden_dim, device, num_agents)
         print(f"✓ Critic网络创建成功")
         print(f"  网络参数数量: {sum(p.numel() for p in critic.parameters())}")
         

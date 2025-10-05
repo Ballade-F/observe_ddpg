@@ -8,41 +8,65 @@ import torch.nn.functional as F
 
 
 class MAPPO:
-    def __init__(self, args):
-        self.agent_n = args.agent_n
-        self.action_dim = args.action_dim
-        self.max_action = args.max_action
-        self.all_state_dim = args.all_state_dim
-        self.self_state_dim = args.self_state_dim
-        self.observe_state_dim = args.observe_state_dim
-        self.episode_limit = args.episode_limit
+    def __init__(self, agent_n: int, all_state_dim: int, self_state_dim: int, 
+                 observe_state_dim: int, action_dim: int, max_action: np.ndarray, 
+                 gamma: float, lamda: float, epsilon: float,
+                 hidden_dim: int, actor_lr: float, critic_lr: float, device: torch.device):
+        """
+        初始化MAPPO
+        Args:
+            agent_n: 智能体数量
+            all_state_dim: 全局状态维度
+            self_state_dim: 智能体自身状态维度
+            observe_state_dim: 观测维度
+            action_dim: 动作维度
+            max_action: 最大动作值
+            gamma: 折扣因子
+            lamda: 优势函数的参数
+            epsilon: 裁剪参数
+            hidden_dim: 隐藏层维度
+            actor_lr: actor优化器学习率
+            critic_lr: critic优化器学习率
+            device: 设备
+        """
+        self.agent_n = agent_n
+        self.action_dim = action_dim
+        self.max_action = max_action
+        self.all_state_dim = all_state_dim
+        self.self_state_dim = self_state_dim
+        self.observe_state_dim = observe_state_dim
         
-        self.gamma = args.gamma
-        self.lamda = args.lamda
-        self.epsilon = args.epsilon
+        # 训练参数
+        self.gamma = gamma
+        self.lamda = lamda
+        self.epsilon = epsilon
         
-        self.device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+        # 网络参数
+        self.hidden_dim = hidden_dim
+        
+        # 设备配置
+        self.device = device
         
         # 创建网络
         self.actor = Actor(
             self_state_dim=self.self_state_dim,
             observe_state_dim=self.observe_state_dim,
             action_dim=self.action_dim,
-            hidden_dim=args.hidden_dim,
+            hidden_dim=self.hidden_dim,
             max_action=self.max_action,
             device=self.device
         )
         
         self.critic = Critic(
             all_state_dim=self.all_state_dim,
-            hidden_dim=args.hidden_dim,
+            hidden_dim=self.hidden_dim,
             device=self.device,
             agent_n=self.agent_n
         )
         
         # 创建优化器
-        self.actor_optimizers = torch.optim.Adam(self.actor.parameters(), lr=args.actor_lr)
-        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=args.critic_lr)
+        self.actor_optimizers = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
+        self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=critic_lr)
 
     def choose_action(self, self_state, observe_l, observe_t):
         """
@@ -69,6 +93,7 @@ class MAPPO:
     def update(self, transition_dicts: ReplayBuffer):
         traj_len = len(transition_dicts)
         buffer = transition_dicts.get_training_data()
+        agent_states = buffer['agent_states'] # [traj_len, agent_n, agent_state_dim]
         states = buffer['states'] # [traj_len, all_state_dim]
         next_states = buffer['next_states'] # [traj_len, all_state_dim]
         observe_l = buffer['observe_l'] # [traj_len, agent_n, observe_state_dim]
@@ -103,12 +128,12 @@ class MAPPO:
         entropies = []
         action_loss = torch.zeros(1, device=self.device)
         for i in range(self.agent_n):
-            self_state = states[:, i*self.self_state_dim:(i+1)*self.self_state_dim]
+            self_state = agent_states[:, i, :]
             observe_l_i = observe_l[:, i, :]
             observe_t_i = observe_t[:, i, :]
             action_i = actions[:, i, :]
-            # TODO:目前概率是所有动作概率和，考虑改为乘积
-            old_probs_i = a_logprobs[:, i, :].sum(dim=1, keepdim=True) # [traj_len, 1]
+            # TODO:目前概率是所有动作对数概率和，考虑改为乘积
+            old_probs_i = a_logprobs[:, i, :].sum(dim=1, keepdim=True).detach() # [traj_len, 1]
 
             # 获取当前的均值和对数标准差，创建正态分布
             mean, log_std = self.actor(self_state, observe_l_i, observe_t_i)
@@ -117,9 +142,8 @@ class MAPPO:
             
             # 计算当前动作的对数概率
             log_probs = normal_dist.log_prob(action_i).sum(dim=1, keepdim=True) # [traj_len, 1]
-            old_log_probs = torch.log(old_probs_i).detach() # [traj_len, 1]
 
-            ratio = torch.exp(log_probs - old_log_probs)
+            ratio = torch.exp(log_probs - old_probs_i)
             surr1 = ratio * advantages[i].unsqueeze(-1) # [traj_len, 1]
             surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages[i].unsqueeze(-1) # [traj_len, 1]
 
@@ -149,9 +173,9 @@ class MAPPO:
         return torch.tensor(advantage_list, dtype=torch.float)
 
     
-    def save_model(self, save_dir, total_steps):
-        torch.save(self.actor.state_dict(), f"{save_dir}/actor_step_{int(total_steps/1000)}k.pth")
-        torch.save(self.critic.state_dict(), f"{save_dir}/critic_step_{int(total_steps/1000)}k.pth")
+    def save_model(self, save_dir, episode):
+        torch.save(self.actor.state_dict(), f"{save_dir}/actor_episode_{episode/100}.pth")
+        torch.save(self.critic.state_dict(), f"{save_dir}/critic_episode_{episode/100}.pth")
     
     def load_model(self, actor_path, critic_path):
         self.actor.load_state_dict(torch.load(actor_path))

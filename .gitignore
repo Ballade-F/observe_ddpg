@@ -1,5 +1,6 @@
-__pycache__/*
-log/*
-models/*
-images/*
+__pycache__
+log
+models
+images
 REF_MAPPO_MPE
+.vscode

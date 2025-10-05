@@ -2,12 +2,21 @@ import numpy as np
 import torch
 
 class ReplayBuffer:
-    def __init__(self, args):
-        self.agent_n = args.agent_n
-        self.all_state_dim = args.all_state_dim
-        self.observe_state_dim = args.observe_state_dim
-        self.action_dim = args.action_dim
-        self.step_max = args.step_max
+    def __init__(self, agent_n: int, all_state_dim: int, observe_state_dim: int, action_dim: int, step_max: int):
+        """
+        初始化ReplayBuffer
+        Args:
+            agent_n: 智能体数量
+            all_state_dim: 全局状态维度
+            observe_state_dim: 观测维度
+            action_dim: 动作维度
+            step_max: 最大步数
+        """
+        self.agent_n = agent_n
+        self.all_state_dim = all_state_dim
+        self.observe_state_dim = observe_state_dim
+        self.action_dim = action_dim
+        self.step_max = step_max
         self.step = 0
         self.buffer = None
         self.reset_buffer()
@@ -16,6 +25,7 @@ class ReplayBuffer:
         self.buffer = {
             'states': [],
             'next_states': [],
+            'agent_states': [],
             'observe_l': [],
             'observe_t': [],
             'actions': [],
@@ -25,12 +35,13 @@ class ReplayBuffer:
         }
         self.step = 0
     
-    def store_transition(self, state, next_state, observe_l, observe_t, action, a_logprob, reward, done):
+    def store_transition(self, state, next_state, agent_state, observe_l, observe_t, action, a_logprob, reward, done):
         """
         存储单步transition
         Args:
             state: (all_state_dim,) 全局状态
             next_state: (all_state_dim,) 下一个全局状态
+            agent_state: (agent_n, agent_state_dim) 每个agent的自身状态
             observe_l: (agent_n, observe_state_dim) 雷达距离观测
             observe_t: (agent_n, observe_state_dim) 雷达类型观测
             action: (agent_n, action_dim) 动作
@@ -43,6 +54,7 @@ class ReplayBuffer:
         
         self.buffer['states'].append(state)
         self.buffer['next_states'].append(next_state)
+        self.buffer['agent_states'].append(agent_state)
         self.buffer['observe_l'].append(observe_l)
         self.buffer['observe_t'].append(observe_t)
         self.buffer['actions'].append(action)
@@ -82,13 +94,25 @@ class ReplayBuffer:
         
 
 class ReplayBufferBatch:
-    def __init__(self, args):
-        self.agent_n = args.agent_n
-        self.all_state_dim = args.all_state_dim
-        self.observe_state_dim = args.observe_state_dim
-        self.action_dim = args.action_dim
-        self.episode_limit = args.episode_limit
-        self.batch_size = args.batch_size
+    def __init__(self, agent_n: int, all_state_dim: int, agent_state_dim: int, observe_state_dim: int, action_dim: int, episode_limit: int, batch_size: int):
+        """
+        初始化ReplayBufferBatch
+        Args:
+            agent_n: 智能体数量
+            all_state_dim: 全局状态维度
+            agent_state_dim: 每个agent的自身状态维度
+            observe_state_dim: 观测维度
+            action_dim: 动作维度
+            episode_limit: 每个episode的最大步数
+            batch_size: 每个batch的大小
+        """
+        self.agent_n = agent_n
+        self.all_state_dim = all_state_dim
+        self.agent_state_dim = agent_state_dim
+        self.observe_state_dim = observe_state_dim
+        self.action_dim = action_dim
+        self.episode_limit = episode_limit
+        self.batch_size = batch_size
         self.episode_num = 0
         self.buffer = None
         self.reset_buffer()
@@ -97,6 +121,7 @@ class ReplayBufferBatch:
         self.buffer = {
             'states': np.empty([self.batch_size, self.episode_limit, self.all_state_dim]),
             'next_states': np.empty([self.batch_size, self.episode_limit, self.all_state_dim]),
+            'agent_states': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.agent_state_dim]),
             'observe_l': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.observe_state_dim]),
             'observe_t': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.observe_state_dim]),
             'actions': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.action_dim]),
@@ -107,13 +132,14 @@ class ReplayBufferBatch:
         }
         self.episode_num = 0
 
-    def store_transition(self, episode_step, states, next_states, observe_l, observe_t, actions, a_logprobs, rewards, dones):
+    def store_transition(self, episode_step, states, next_states, agent_states, observe_l, observe_t, actions, a_logprobs, rewards, dones):
         """
         存储单步transition
         Args:
             episode_step: 当前episode的步数
             states: (all_state_dim,) 全局状态
             next_states: (all_state_dim,) 下一个全局状态
+            agent_states: (agent_n, agent_state_dim) 每个agent的自身状态
             observe_l: (agent_n, observe_state_dim) 雷达距离观测
             observe_t: (agent_n, observe_state_dim) 雷达类型观测
             actions: (agent_n, action_dim) 动作
@@ -123,6 +149,7 @@ class ReplayBufferBatch:
         """
         self.buffer['states'][self.episode_num][episode_step] = states
         self.buffer['next_states'][self.episode_num][episode_step] = next_states
+        self.buffer['agent_states'][self.episode_num][episode_step] = agent_states
         self.buffer['observe_l'][self.episode_num][episode_step] = observe_l
         self.buffer['observe_t'][self.episode_num][episode_step] = observe_t
         self.buffer['actions'][self.episode_num][episode_step] = actions
