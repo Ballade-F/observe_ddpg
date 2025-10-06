@@ -14,7 +14,7 @@ class Actor(nn.Module):
 
         # RadarObserveType有6种类型：UnfinishedGoal=0, Empty=1, FinishedGoal=2, Obstacle=3, Agent=4, Boundary=5
         self.num_radar_types = 6
-        self.radar_type_embed_dim = 4  # embedding维度
+        self.radar_type_embed_dim = 3  # embedding维度
         self.observe_state_dim = observe_state_dim
         
         # 为雷达类型创建embedding层

@@ -77,7 +77,7 @@ def train():
     logger.info(f"配置参数: {config}")
     
     # 设置随机种子
-    seed = 0
+    seed = 1
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
@@ -87,33 +87,44 @@ def train():
     device = torch.device(config["training"]["device"] if torch.cuda.is_available() else "cpu")
     logger.info(f"使用设备: {device}")
 
-    # 创建环境
-    env = SimEnv(config)
-    logger.info(f"环境创建成功 - Agent数量: {env.kNumAgents}, 目标数量: {env.kNumGoals}, 障碍物数量: {env.kNumObstacles}")
+    # 创建多个环境以提高泛化能力
+    num_envs = 10
+    envs = []
+    logger.info(f"开始创建 {num_envs} 个训练环境（每个环境配置不同）...")
+    
+    for env_idx in range(num_envs):
+        # 连续创建环境，随机数生成器状态会自动变化，确保每个环境配置不同
+        env = SimEnv(config)
+        envs.append(env)
+        logger.info(f"环境 {env_idx+1}/{num_envs} 创建成功 - Agent数量: {env.kNumAgents}, 目标数量: {env.kNumGoals}, 障碍物数量: {env.kNumObstacles}")
+    
+    # 使用第一个环境获取维度信息
+    env_template = envs[0]
+    logger.info(f"所有环境创建完成，将在训练时轮流使用以提高泛化能力")
     
     # 计算状态和动作维度
     agent_state_dim = 3  # x, y, theta
-    observe_dim = env.kNumRadars  # 雷达观测维度
+    observe_dim = env_template.kNumRadars  # 雷达观测维度
     action_dim = 2  # speed, angular_speed
-    all_state_dim = env.kNumAgents * 3 + env.kNumGoals * 3 + env.kNumObstacles * 3
-    max_action = np.array([env.kMaxSpeed, env.kMaxAngularSpeed])
+    all_state_dim = env_template.kNumAgents * 3 + env_template.kNumGoals * 3 + env_template.kNumObstacles * 3
+    max_action = np.array([env_template.kMaxSpeed, env_template.kMaxAngularSpeed])
     
     logger.info(f"状态维度 - Agent状态: {agent_state_dim}, 观测维度: {observe_dim}, 动作维度: {action_dim}")
     logger.info(f"全局状态维度: {all_state_dim}, 最大动作: {max_action}")
 
 
     # 参数设置
-    actor_lr = 3e-4
-    critic_lr = 1e-3
-    total_episodes = 100000
-    hidden_dim = 256
-    gamma = 0.99
-    lamda = 0.97
-    eps = 0.3
-    step_max = 600
+    actor_lr = config["training"]["actor_lr"]
+    critic_lr = config["training"]["critic_lr"]
+    total_episodes = config["training"]["total_episodes"]
+    hidden_dim = config["network"]["hidden_dim"]
+    gamma = config["training"]["gamma"]
+    lamda = config["training"]["lamda"]
+    eps = config["training"]["epsilon"]
+    step_max = config["training"]["step_max"]
 
     mappo = MAPPO(
-        agent_n=env.kNumAgents,
+        agent_n=env_template.kNumAgents,
         all_state_dim=all_state_dim,
         self_state_dim=agent_state_dim,
         observe_state_dim=observe_dim,
@@ -129,7 +140,7 @@ def train():
     )
 
     replay_buffer = ReplayBuffer(
-        agent_n=env.kNumAgents,
+        agent_n=env_template.kNumAgents,
         all_state_dim=all_state_dim,
         observe_state_dim=observe_dim,
         action_dim=action_dim,
@@ -145,6 +156,10 @@ def train():
     ave_step=[]
 
     for episode in range(1, total_episodes + 1):
+        # 轮流选择环境进行训练，以提高泛化能力
+        env_idx = (episode - 1) % num_envs
+        env = envs[env_idx]
+        
         replay_buffer.reset_buffer()
         env.reset()
 
@@ -210,7 +225,7 @@ def train():
             ave_num_completed_goals=[]
             ave_step=[]
 
-        if episode % 500 == 0:
+        if episode % 100 == 0:
             mappo.save_model(models_dir, episode)
             logger.info(f"Model saved at episode {episode}")
 

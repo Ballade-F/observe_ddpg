@@ -117,6 +117,10 @@ class MAPPO:
             adv_i = self.compute_advantage(td_delta[:, i])
             advantages.append(adv_i.to(self.device))  # [traj_len]
 
+        #debug 先让adv=reward，维度转换一下，由[traj_len, agent_n]变为[agent_n, traj_len]
+        advantages = rewards.transpose(0, 1)
+
+
         # 更新critic
         critic_loss = F.mse_loss(values, td_target.detach())
         self.critic_optimizer.zero_grad()
@@ -133,7 +137,8 @@ class MAPPO:
             observe_t_i = observe_t[:, i, :]
             action_i = actions[:, i, :]
             # TODO:目前概率是所有动作对数概率和，考虑改为乘积
-            old_probs_i = a_logprobs[:, i, :].sum(dim=1, keepdim=True).detach() # [traj_len, 1]
+            old_probs_i = a_logprobs[:, i, :]
+            old_probs_i = old_probs_i.sum(dim=1, keepdim=False).detach() # [traj_len]
 
             # 获取当前的均值和对数标准差，创建正态分布
             mean, log_std = self.actor(self_state, observe_l_i, observe_t_i)
@@ -141,11 +146,12 @@ class MAPPO:
             normal_dist = torch.distributions.Normal(mean, std)
             
             # 计算当前动作的对数概率
-            log_probs = normal_dist.log_prob(action_i).sum(dim=1, keepdim=True) # [traj_len, 1]
+            log_probs = normal_dist.log_prob(action_i)
+            log_probs = log_probs.sum(dim=1, keepdim=False) # [traj_len]
 
             ratio = torch.exp(log_probs - old_probs_i)
-            surr1 = ratio * advantages[i].unsqueeze(-1) # [traj_len, 1]
-            surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages[i].unsqueeze(-1) # [traj_len, 1]
+            surr1 = ratio * advantages[i] # [traj_len]
+            surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages[i] # [traj_len]
 
             action_loss_i = torch.mean(-torch.min(surr1, surr2))
             action_loss += action_loss_i

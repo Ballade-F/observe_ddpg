@@ -59,6 +59,8 @@ class SimEnv:
         self.kGoalThreshold = config.get("goal", {}).get("kGoalThreshold", 0.5)
         
         self.kTimeReward = config.get("reward", {}).get("kTimeReward", -0.01)
+        self.kDistCostReward = config.get("reward", {}).get("kDistCostReward", -0.1)
+        self.kWCostReward = config.get("reward", {}).get("kWCostReward", -1.0)
         self.kCollisionReward = config.get("reward", {}).get("kCollisionReward", -1.0)
         self.kGoalReward = config.get("reward", {}).get("kGoalReward", 1.0)
         self.kDistanceReward = config.get("reward", {}).get("kDistanceReward", 0.1)
@@ -82,6 +84,9 @@ class SimEnv:
 
         #程序中用到的辅助变量
         self.radar_angle_range = np.linspace(-np.pi, np.pi, self.kNumRadars, endpoint=False)
+        self.pre_goal_dist_reward = np.zeros(self.kNumAgents)
+        self.agent_velocity = np.zeros(self.kNumAgents)
+        self.agent_angular_velocity = np.zeros(self.kNumAgents)
 
         #初始化
         self.generate_map()
@@ -105,7 +110,9 @@ class SimEnv:
         agent_speed = action[:, 0]
         agent_angular_speed = action[:, 1]
         agent_speed = np.clip(agent_speed, -self.kMaxSpeed, self.kMaxSpeed)
+        self.agent_velocity = agent_speed
         agent_angular_speed = np.clip(agent_angular_speed, -self.kMaxAngularSpeed, self.kMaxAngularSpeed)
+        self.agent_angular_velocity = agent_angular_speed
         
         # 更新智能体状态
         self.agentState[:, 2] += agent_angular_speed * self.kTimeStep
@@ -174,6 +181,12 @@ class SimEnv:
         self.goalState = self.goalStartState.copy()
         self.collision_flag = [False] * self.kNumAgents
         self.update_observe_state()
+
+        # 2. 目标距离奖励：使用距离倒数和
+        for i in range(self.kNumAgents):
+            if not self.collision_flag[i]:  # 只对未碰撞的智能体计算
+                distance_reward = self.get_goal_distance_reward(self.agentState[i, :2])
+                self.pre_goal_dist_reward[i] = self.kDistanceReward * distance_reward
 
     def update_observe_state(self):
         """
@@ -338,22 +351,30 @@ class SimEnv:
     
     def get_goal_distance_reward(self, agent_pos: np.ndarray) -> float:
         """
-        计算智能体到所有未完成目标的距离倒数和奖励
+        计算智能体到所有目标的距离倒数和奖励
+        对于未完成的目标，使用实际距离；对于已完成的目标，距离按照kMinGoalDistance计算
         Args:
             agent_pos: 智能体位置 (x, y)
         Returns:
             float: 距离倒数和奖励
         """
-        unfinished_goals = self.goalState[self.goalState[:, 2] < 0.5]  # 未完成的目标
-        if len(unfinished_goals) == 0:
-            return 0.0  # 所有目标都完成了
+        if len(self.goalState) == 0:
+            return 0.0
         
-        distances = np.linalg.norm(unfinished_goals[:, :2] - agent_pos, axis=1)
-        # 限制最小距离以避免无穷大奖励
+        # 计算到所有目标的实际距离
+        distances = np.linalg.norm(self.goalState[:, :2] - agent_pos, axis=1)
+        
+        # 对于已完成的目标，将距离设置为kMinGoalDistance
+        finished_mask = self.goalState[:, 2] > 0.5
+        distances[finished_mask] = self.kMinGoalDistance
+        
+        # 对于未完成的目标，限制最小距离以避免无穷大奖励
         distances = np.maximum(distances, self.kMinGoalDistance)
         
         # 计算距离倒数和
-        inverse_distances = 1.0 / distances
+        # inverse_distances = 1.0 / distances
+        #debug
+        inverse_distances = -distances
         return np.sum(inverse_distances)
     
     def get_agent_separation_reward(self) -> float:
@@ -394,10 +415,17 @@ class SimEnv:
                 rewards[i] += self.kGoalReward * agent_reach_goal_num[i]  # 目标完成奖励
         
         # 2. 目标距离奖励：使用距离倒数和
+        dist_reward = np.zeros(self.kNumAgents)
         for i in range(self.kNumAgents):
             if not self.collision_flag[i]:  # 只对未碰撞的智能体计算
                 distance_reward = self.get_goal_distance_reward(self.agentState[i, :2])
-                rewards[i] += self.kDistanceReward * distance_reward
+                dist_reward[i] = self.kDistanceReward * distance_reward
+                rewards[i] += dist_reward[i]-self.pre_goal_dist_reward[i]
+                self.pre_goal_dist_reward[i] = dist_reward[i]
+        
+        # 3.动作做出惩罚
+        rewards[i] += self.kDistCostReward * abs(self.agent_velocity[i]) * self.kTimeStep 
+        rewards[i] += self.kWCostReward * abs(self.agent_angular_velocity[i]) * self.kTimeStep 
         
         # 3. 智能体分离奖励（可选）
         # separation_reward = self.get_agent_separation_reward()
