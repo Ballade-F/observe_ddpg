@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 from torch.utils.data.sampler import BatchSampler, SequentialSampler
 from network import Actor, Critic
-from replay_buffer import ReplayBuffer
+from replay_buffer import ReplayBuffer, ReplayBufferBatch
 import torch.nn.functional as F
 
 
@@ -167,6 +167,140 @@ class MAPPO:
         self.actor_optimizers.step()
 
         return np.mean(action_losses), critic_loss.item(), np.mean(entropies)
+
+    def update_batch(self, batch_buffer: ReplayBufferBatch):
+        """
+        对整个batch中的多条轨迹进行训练
+        Args:
+            batch_buffer: ReplayBufferBatch对象，包含多条不同长度的轨迹
+        Returns:
+            avg_action_loss: 平均actor损失
+            avg_critic_loss: 平均critic损失
+            avg_entropy: 平均熵
+        """
+        # 获取所有轨迹的数据
+        all_trajectories = batch_buffer.get_training_data()
+        num_trajs = len(all_trajectories)
+        
+        if num_trajs == 0:
+            return 0.0, 0.0, 0.0
+        
+        # 初始化累积损失
+        total_critic_loss = torch.zeros(1, device=self.device)
+        total_action_loss = torch.zeros(1, device=self.device)
+        total_action_losses_per_agent = []
+        total_entropies = []
+        num_valid_trajs = 0  # 记录有效轨迹数
+        
+        # 清零梯度
+        self.critic_optimizer.zero_grad()
+        self.actor_optimizers.zero_grad()
+        
+        # 遍历每条轨迹
+        for traj_idx, buffer in enumerate(all_trajectories):
+            traj_len = len(buffer['states'])
+            if traj_len == 0:
+                continue
+            
+            num_valid_trajs += 1
+            
+            # 提取轨迹数据
+            agent_states = buffer['agent_states']  # [traj_len, agent_n, agent_state_dim]
+            states = buffer['states']  # [traj_len, all_state_dim]
+            next_states = buffer['next_states']  # [traj_len, all_state_dim]
+            observe_l = buffer['observe_l']  # [traj_len, agent_n, observe_state_dim]
+            observe_t = buffer['observe_t']  # [traj_len, agent_n, observe_state_dim]
+            actions = buffer['actions']  # [traj_len, agent_n, action_dim]
+            a_logprobs = buffer['a_logprobs']  # [traj_len, agent_n, action_dim]
+            rewards = buffer['rewards']  # [traj_len, agent_n]
+            dones = buffer['dones']  # [traj_len]
+            
+            # done复制agent_n次
+            dones = dones.unsqueeze(-1).repeat(1, self.agent_n)  # [traj_len, agent_n]
+            
+            # 从critic计算价值和TD-target
+            values = self.critic(states)  # [traj_len, agent_n]
+            next_values = self.critic(next_states)  # [traj_len, agent_n]
+            td_target = rewards + self.gamma * next_values * (1 - dones)  # [traj_len, agent_n]
+            td_delta = td_target - values  # [traj_len, agent_n]
+            
+            # 为每个智能体计算其优势
+            advantages = []  # [agent_n, traj_len]
+            for i in range(self.agent_n):
+                adv_i = self.compute_advantage(td_delta[:, i])
+                advantages.append(adv_i.to(self.device))  # [traj_len]
+            
+            # debug 先让adv=reward，维度转换一下，由[traj_len, agent_n]变为[agent_n, traj_len]
+            advantages = rewards.transpose(0, 1)
+            
+            # 计算critic损失（使用mean，对该轨迹内的step和agent求平均）
+            critic_loss = F.mse_loss(values, td_target.detach(), reduction='mean')
+            total_critic_loss += critic_loss
+            
+            # 计算actor损失
+            action_losses = []
+            entropies = []
+            
+            for i in range(self.agent_n):
+                self_state = agent_states[:, i, :]
+                observe_l_i = observe_l[:, i, :]
+                observe_t_i = observe_t[:, i, :]
+                action_i = actions[:, i, :]
+                old_probs_i = a_logprobs[:, i, :]
+                old_probs_i = old_probs_i.sum(dim=1, keepdim=False).detach()  # [traj_len]
+                
+                # 获取当前的均值和对数标准差，创建正态分布
+                mean, log_std = self.actor(self_state, observe_l_i, observe_t_i)
+                std = log_std.exp()
+                normal_dist = torch.distributions.Normal(mean, std)
+                
+                # 计算当前动作的对数概率
+                log_probs = normal_dist.log_prob(action_i)
+                log_probs = log_probs.sum(dim=1, keepdim=False)  # [traj_len]
+                
+                ratio = torch.exp(log_probs - old_probs_i)
+                surr1 = ratio * advantages[i]  # [traj_len]
+                surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages[i]
+                
+                # 对该轨迹的该智能体的所有步求平均
+                action_loss_i = torch.mean(-torch.min(surr1, surr2))
+                total_action_loss += action_loss_i
+                
+                # 对于连续动作空间，熵的计算
+                entropy_val = torch.mean(normal_dist.entropy()).item()
+                
+                action_losses.append(action_loss_i.item())
+                entropies.append(entropy_val)
+            
+            total_action_losses_per_agent.append(action_losses)
+            total_entropies.append(entropies)
+        
+        # 如果没有有效轨迹，返回0
+        if num_valid_trajs == 0:
+            return 0.0, 0.0, 0.0
+        
+        # 计算平均损失（对所有轨迹求平均）
+        avg_critic_loss = total_critic_loss / num_valid_trajs
+        avg_action_loss = total_action_loss / (num_valid_trajs * self.agent_n)
+        
+        # 反向传播并更新
+        avg_critic_loss.backward()
+        self.critic_optimizer.step()
+        
+        avg_action_loss.backward()
+        self.actor_optimizers.step()
+        
+        # 计算统计信息
+        all_action_losses = []
+        all_entropies = []
+        for traj_losses in total_action_losses_per_agent:
+            all_action_losses.extend(traj_losses)
+        for traj_entropies in total_entropies:
+            all_entropies.extend(traj_entropies)
+        
+        return np.mean(all_action_losses) if all_action_losses else 0.0, \
+               avg_critic_loss.item(), \
+               np.mean(all_entropies) if all_entropies else 0.0
 
     def compute_advantage(self, td_delta):
         td_delta = td_delta.detach().cpu().numpy()

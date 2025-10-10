@@ -94,77 +94,165 @@ class ReplayBuffer:
         
 
 class ReplayBufferBatch:
-    def __init__(self, agent_n: int, all_state_dim: int, agent_state_dim: int, observe_state_dim: int, action_dim: int, episode_limit: int, batch_size: int):
+    def __init__(self, agent_n: int, all_state_dim: int, observe_state_dim: int, action_dim: int, batch_size: int, step_max: int):
         """
-        初始化ReplayBufferBatch
+        初始化ReplayBufferBatch，管理多条轨迹
         Args:
             agent_n: 智能体数量
             all_state_dim: 全局状态维度
-            agent_state_dim: 每个agent的自身状态维度
             observe_state_dim: 观测维度
             action_dim: 动作维度
-            episode_limit: 每个episode的最大步数
-            batch_size: 每个batch的大小
+            batch_size: 批次大小（最多存储多少条轨迹）
+            step_max: 每条轨迹的最大步数
         """
         self.agent_n = agent_n
         self.all_state_dim = all_state_dim
-        self.agent_state_dim = agent_state_dim
         self.observe_state_dim = observe_state_dim
         self.action_dim = action_dim
-        self.episode_limit = episode_limit
         self.batch_size = batch_size
-        self.episode_num = 0
-        self.buffer = None
-        self.reset_buffer()
-
-    def reset_buffer(self):
-        self.buffer = {
-            'states': np.empty([self.batch_size, self.episode_limit, self.all_state_dim]),
-            'next_states': np.empty([self.batch_size, self.episode_limit, self.all_state_dim]),
-            'agent_states': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.agent_state_dim]),
-            'observe_l': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.observe_state_dim]),
-            'observe_t': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.observe_state_dim]),
-            'actions': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.action_dim]),
-            'a_logprobs': np.empty([self.batch_size, self.episode_limit, self.agent_n, self.action_dim]),
-            'values': np.empty([self.batch_size, self.episode_limit+1]),
-            'rewards': np.empty([self.batch_size, self.episode_limit, self.agent_n]),
-            'dones': np.empty([self.batch_size, self.episode_limit])
+        self.step_max = step_max
+        
+        # 使用list存储多条轨迹，每条轨迹是一个与ReplayBuffer中buffer相同结构的字典
+        self.buffers = []
+        
+        # 记录当前有多少条轨迹
+        self.traj_count = 0
+        
+        # 循环覆盖的索引
+        self.current_idx = 0
+    
+    def _get_empty_buffer(self):
+        """创建一个空的buffer结构"""
+        return {
+            'states': [],
+            'next_states': [],
+            'agent_states': [],
+            'observe_l': [],
+            'observe_t': [],
+            'actions': [],
+            'a_logprobs': [],
+            'rewards': [],
+            'dones': [],
+            'step': 0  # 记录该轨迹的当前步数
         }
-        self.episode_num = 0
-
-    def store_transition(self, episode_step, states, next_states, agent_states, observe_l, observe_t, actions, a_logprobs, rewards, dones):
+    
+    def store_transition(self, traj_idx: int, state, next_state, agent_state, observe_l, observe_t, action, a_logprob, reward, done):
         """
-        存储单步transition
+        存储指定轨迹的单步transition
         Args:
-            episode_step: 当前episode的步数
-            states: (all_state_dim,) 全局状态
-            next_states: (all_state_dim,) 下一个全局状态
-            agent_states: (agent_n, agent_state_dim) 每个agent的自身状态
+            traj_idx: 轨迹索引（从0开始）
+            state: (all_state_dim,) 全局状态
+            next_state: (all_state_dim,) 下一个全局状态
+            agent_state: (agent_n, agent_state_dim) 每个agent的自身状态
             observe_l: (agent_n, observe_state_dim) 雷达距离观测
             observe_t: (agent_n, observe_state_dim) 雷达类型观测
-            actions: (agent_n, action_dim) 动作
-            a_logprobs: (agent_n, action_dim) 动作对数概率
-            rewards: (agent_n,) 每个智能体的奖励
-            dones: bool 是否结束
+            action: (agent_n, action_dim) 动作
+            a_logprob: (agent_n, action_dim) 动作对数概率
+            reward: (agent_n,) 每个智能体的奖励
+            done: bool 是否结束
         """
-        self.buffer['states'][self.episode_num][episode_step] = states
-        self.buffer['next_states'][self.episode_num][episode_step] = next_states
-        self.buffer['agent_states'][self.episode_num][episode_step] = agent_states
-        self.buffer['observe_l'][self.episode_num][episode_step] = observe_l
-        self.buffer['observe_t'][self.episode_num][episode_step] = observe_t
-        self.buffer['actions'][self.episode_num][episode_step] = actions
-        self.buffer['a_logprobs'][self.episode_num][episode_step] = a_logprobs
-        self.buffer['rewards'][self.episode_num][episode_step] = rewards
-        self.buffer['dones'][self.episode_num][episode_step] = dones
-
-    def store_last_value(self, episode_step, v_n):
-        self.buffer['values'][self.episode_num][episode_step] = v_n
-        self.episode_num += 1
-
-
+        # 如果轨迹索引超过batch_size，使用循环覆盖
+        actual_idx = traj_idx % self.batch_size
+        
+        # 如果该索引位置还没有buffer，创建新的
+        if actual_idx >= len(self.buffers):
+            self.buffers.append(self._get_empty_buffer())
+            self.traj_count += 1
+        # 如果需要覆盖旧数据
+        elif traj_idx >= self.batch_size and actual_idx < len(self.buffers):
+            # 重置该位置的buffer
+            self.buffers[actual_idx] = self._get_empty_buffer()
+        
+        buffer = self.buffers[actual_idx]
+        
+        # 检查是否超过最大步数
+        if buffer['step'] >= self.step_max:
+            return  # 该轨迹已满，不再存储
+        
+        # 存储数据
+        buffer['states'].append(state)
+        buffer['next_states'].append(next_state)
+        buffer['agent_states'].append(agent_state)
+        buffer['observe_l'].append(observe_l)
+        buffer['observe_t'].append(observe_t)
+        buffer['actions'].append(action)
+        buffer['a_logprobs'].append(a_logprob)
+        buffer['rewards'].append(reward)
+        buffer['dones'].append(done)
+        buffer['step'] += 1
+    
+    def get_trajectory(self, traj_idx: int):
+        """
+        获取指定轨迹的数据
+        Args:
+            traj_idx: 轨迹索引
+        Returns:
+            dict: 包含该轨迹所有transition的字典（numpy数组格式）
+        """
+        actual_idx = traj_idx % self.batch_size
+        if actual_idx >= len(self.buffers):
+            return None
+        
+        buffer = self.buffers[actual_idx]
+        data = {}
+        for key in buffer.keys():
+            if key != 'step':
+                data[key] = np.array(buffer[key])
+        return data
+    
+    def get_all_data(self):
+        """
+        获取所有轨迹的数据
+        Returns:
+            list: 包含所有轨迹数据的列表，每个元素是一个字典
+        """
+        all_data = []
+        for buffer in self.buffers:
+            data = {}
+            for key in buffer.keys():
+                if key != 'step':
+                    data[key] = np.array(buffer[key])
+            all_data.append(data)
+        return all_data
+    
     def get_training_data(self):
-        batch = {}
-        for key in self.buffer.keys():
-            batch[key] = torch.tensor(self.buffer[key], dtype=torch.float32)
-        return batch
-
+        """
+        获取所有轨迹的数据，转换为tensor格式
+        Returns:
+            list: 包含所有轨迹数据的列表，每个元素是一个字典，值为torch.Tensor
+        """
+        all_data = []
+        for buffer in self.buffers:
+            data = {}
+            for key in buffer.keys():
+                if key != 'step':
+                    data[key] = torch.tensor(np.array(buffer[key]), dtype=torch.float32)
+            all_data.append(data)
+        return all_data
+    
+    def reset_buffer(self):
+        """重置所有buffer"""
+        self.buffers = []
+        self.traj_count = 0
+        self.current_idx = 0
+    
+    def reset_trajectory(self, traj_idx: int):
+        """重置指定轨迹的buffer"""
+        actual_idx = traj_idx % self.batch_size
+        if actual_idx < len(self.buffers):
+            self.buffers[actual_idx] = self._get_empty_buffer()
+    
+    def get_trajectory_length(self, traj_idx: int):
+        """获取指定轨迹的长度"""
+        actual_idx = traj_idx % self.batch_size
+        if actual_idx >= len(self.buffers):
+            return 0
+        return self.buffers[actual_idx]['step']
+    
+    def get_num_trajectories(self):
+        """获取当前存储的轨迹数量"""
+        return len(self.buffers)
+    
+    def __len__(self):
+        """返回当前存储的轨迹数量"""
+        return len(self.buffers)
