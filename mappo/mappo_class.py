@@ -93,15 +93,15 @@ class MAPPO:
     def update(self, transition_dicts: ReplayBuffer):
         traj_len = len(transition_dicts)
         buffer = transition_dicts.get_training_data()
-        agent_states = buffer['agent_states'] # [traj_len, agent_n, agent_state_dim]
-        states = buffer['states'] # [traj_len, all_state_dim]
-        next_states = buffer['next_states'] # [traj_len, all_state_dim]
-        observe_l = buffer['observe_l'] # [traj_len, agent_n, observe_state_dim]
-        observe_t = buffer['observe_t'] # [traj_len, agent_n, observe_state_dim]
-        actions = buffer['actions'] # [traj_len, agent_n, action_dim]
-        a_logprobs = buffer['a_logprobs'] # [traj_len, agent_n, action_dim]
-        rewards = buffer['rewards'] # [traj_len, agent_n]
-        dones = buffer['dones'] # [traj_len]
+        agent_states = buffer['agent_states'].to(self.device) # [traj_len, agent_n, agent_state_dim]
+        states = buffer['states'].to(self.device) # [traj_len, all_state_dim]
+        next_states = buffer['next_states'].to(self.device) # [traj_len, all_state_dim]
+        observe_l = buffer['observe_l'].to(self.device) # [traj_len, agent_n, observe_state_dim]
+        observe_t = buffer['observe_t'].to(self.device) # [traj_len, agent_n, observe_state_dim]
+        actions = buffer['actions'].to(self.device) # [traj_len, agent_n, action_dim]
+        a_logprobs = buffer['a_logprobs'].to(self.device) # [traj_len, agent_n, action_dim]
+        rewards = buffer['rewards'].to(self.device) # [traj_len, agent_n]
+        dones = buffer['dones'].to(self.device) # [traj_len]
         # done复制agent_n次
         dones = dones.unsqueeze(-1).repeat(1, self.agent_n) # [traj_len, agent_n]
 
@@ -205,15 +205,15 @@ class MAPPO:
             num_valid_trajs += 1
             
             # 提取轨迹数据
-            agent_states = buffer['agent_states']  # [traj_len, agent_n, agent_state_dim]
-            states = buffer['states']  # [traj_len, all_state_dim]
-            next_states = buffer['next_states']  # [traj_len, all_state_dim]
-            observe_l = buffer['observe_l']  # [traj_len, agent_n, observe_state_dim]
-            observe_t = buffer['observe_t']  # [traj_len, agent_n, observe_state_dim]
-            actions = buffer['actions']  # [traj_len, agent_n, action_dim]
-            a_logprobs = buffer['a_logprobs']  # [traj_len, agent_n, action_dim]
-            rewards = buffer['rewards']  # [traj_len, agent_n]
-            dones = buffer['dones']  # [traj_len]
+            agent_states = buffer['agent_states'].to(self.device)  # [traj_len, agent_n, agent_state_dim]
+            states = buffer['states'].to(self.device)  # [traj_len, all_state_dim]
+            next_states = buffer['next_states'].to(self.device)  # [traj_len, all_state_dim]
+            observe_l = buffer['observe_l'].to(self.device)  # [traj_len, agent_n, observe_state_dim]
+            observe_t = buffer['observe_t'].to(self.device)  # [traj_len, agent_n, observe_state_dim]
+            actions = buffer['actions'].to(self.device)  # [traj_len, agent_n, action_dim]
+            a_logprobs = buffer['a_logprobs'].to(self.device)  # [traj_len, agent_n, action_dim]
+            rewards = buffer['rewards'].to(self.device)  # [traj_len, agent_n]
+            dones = buffer['dones'].to(self.device)  # [traj_len]
             
             # done复制agent_n次
             dones = dones.unsqueeze(-1).repeat(1, self.agent_n)  # [traj_len, agent_n]

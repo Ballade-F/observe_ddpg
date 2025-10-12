@@ -62,7 +62,7 @@ def train():
     
     # 设置日志
     logger, log_dir = setup_logging()
-    models_dir = f"models/train_{datetime.now().strftime("%Y-%m-%d-%H-%M")}"
+    models_dir = f"models/train_{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
     if not os.path.exists(models_dir):
         os.makedirs(models_dir)
     
@@ -88,7 +88,7 @@ def train():
     logger.info(f"使用设备: {device}")
 
     # 创建多个环境以提高泛化能力
-    num_envs = 10
+    num_envs = 1
     envs = []
     logger.info(f"开始创建 {num_envs} 个训练环境（每个环境配置不同）...")
     
@@ -239,7 +239,7 @@ def train_batch():
     
     # 设置日志
     logger, log_dir = setup_logging()
-    models_dir = f"models/train_{datetime.now().strftime("%Y-%m-%d-%H-%M")}"
+    models_dir = f"models/train_{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
     if not os.path.exists(models_dir):
         os.makedirs(models_dir)
     
@@ -422,5 +422,5 @@ def train_batch():
 
 
 if __name__ == "__main__":
-    # train()  # 原始单轨迹训练
-    train_batch()  # 批量训练
+    train()  # 原始单轨迹训练
+    # train_batch()  # 批量训练

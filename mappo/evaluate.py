@@ -141,8 +141,7 @@ def plot_realtime_environment(env: SimEnv, ax, frame_num, step_count, reward_his
         RadarObserveType.Obstacle.value: 'red', 
         RadarObserveType.FinishedGoal.value: 'lightgreen',
         RadarObserveType.UnfinishedGoal.value: 'orange',
-        RadarObserveType.Agent.value: 'lightblue',
-        RadarObserveType.Boundary.value: 'black'
+        RadarObserveType.Agent.value: 'lightblue'
     }
     
     for i, (agent_x, agent_y, agent_theta) in enumerate(env.agentState):

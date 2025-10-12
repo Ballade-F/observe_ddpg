@@ -9,9 +9,9 @@ class RadarObserveType(Enum):
     UnfinishedGoal = 0
     Empty = 1
     FinishedGoal = 2
-    Obstacle = 3
-    Agent = 4
-    Boundary = 5
+    Agent = 3
+    Obstacle = 4
+
     
     
 
@@ -232,7 +232,7 @@ class SimEnv:
                         dist = t
                         if dist < min_dist:
                             min_dist = dist
-                            min_type = RadarObserveType.Boundary.value
+                            min_type = RadarObserveType.Obstacle.value
 
         if abs(np.sin(angle)) > 1e-6:  # 避免除以0
             # 检查上下边界
@@ -244,7 +244,7 @@ class SimEnv:
                         dist = t
                         if dist < min_dist:
                             min_dist = dist
-                            min_type = RadarObserveType.Boundary.value
+                            min_type = RadarObserveType.Obstacle.value
 
         # 检查障碍物
         for obs_x, obs_y, obs_r in self.obstacles:
@@ -514,8 +514,7 @@ class SimEnv:
             RadarObserveType.Obstacle.value: 'red', 
             RadarObserveType.FinishedGoal.value: 'lightgreen',
             RadarObserveType.UnfinishedGoal.value: 'orange',
-            RadarObserveType.Agent.value: 'lightblue',
-            RadarObserveType.Boundary.value: 'black'
+            RadarObserveType.Agent.value: 'lightblue'
         }
         
         radar_labels = {
@@ -523,8 +522,7 @@ class SimEnv:
             RadarObserveType.Obstacle.value: 'Radar Obstacle', 
             RadarObserveType.FinishedGoal.value: 'Radar Finished Goal',
             RadarObserveType.UnfinishedGoal.value: 'Radar Unfinished Goal',
-            RadarObserveType.Agent.value: 'Radar Agent',
-            RadarObserveType.Boundary.value: 'Radar Boundary'
+            RadarObserveType.Agent.value: 'Radar Agent'
         }
         
         # 记录已添加到图例的雷达类型
