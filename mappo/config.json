@@ -14,7 +14,7 @@
     "agent": {
         "kAgentRadius": 0.2,
         "kMaxSpeed": 1.0,
-        "kMaxAngularSpeed": 3.14,
+        "kMaxAngularSpeed": 1.0,
         "kNumRadars": 32,
         "kMaxRadarDist": 3.0
     },
@@ -22,9 +22,9 @@
         "kGoalThreshold": 0.3
     },
     "reward": {
-        "kTimeReward": -0.01,
+        "kTimeReward": -0.0,
         "kDistCostReward": -0.2,
-        "kWCostReward":-0.1,
+        "kWCostReward":-0.0,
         "kCollisionReward": -30.0,
         "kGoalReward": 30.0,
         "kDistanceReward": 10.0,
@@ -40,11 +40,11 @@
         "lamda": 0.97,
         "epsilon": 0.4,
         "device": "cuda",
-        "actor_lr": 2e-5,
+        "actor_lr": 1e-4,
         "critic_lr": 2e-4
     },
     "network": {
-        "hidden_dim": 256
+        "hidden_dim": 128
     }
 }
 

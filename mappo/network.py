@@ -12,16 +12,21 @@ class Actor(nn.Module):
         self.device = device
         self.action_dim = action_dim
 
-        # RadarObserveType有6种类型：UnfinishedGoal=0, Empty=1, FinishedGoal=2, Obstacle=3, Agent=4, Boundary=5
-        self.num_radar_types = 6
-        self.radar_type_embed_dim = 3  # embedding维度
-        self.observe_state_dim = observe_state_dim
+        # # RadarObserveType有6种类型：UnfinishedGoal=0, Empty=1, FinishedGoal=2, Obstacle=3, Agent=4, Boundary=5
+        # self.num_radar_types = 6
+        # self.radar_type_embed_dim = 3  # embedding维度
+        # self.observe_state_dim = observe_state_dim
         
-        # 为雷达类型创建embedding层
-        self.radar_type_embedding = nn.Embedding(self.num_radar_types, self.radar_type_embed_dim)
+        # # 为雷达类型创建embedding层
+        # self.radar_type_embedding = nn.Embedding(self.num_radar_types, self.radar_type_embed_dim)
         
-        # 输入维度：self_state + observe_length + embedded_observe_type
-        input_dim = self_state_dim + observe_state_dim + observe_state_dim * self.radar_type_embed_dim
+        # # 输入维度：self_state + observe_length + embedded_observe_type
+        # input_dim = self_state_dim + observe_state_dim + observe_state_dim * self.radar_type_embed_dim
+
+        # 雷达枚举是稀疏的，用embeding效果不好，直接线性层处理
+        # self_state_dim从3(x,y,theta)变为4(x,y,cos(theta),sin(theta))
+        # 所以实际输入维度是4而不是self_state_dim
+        input_dim = 4 + observe_state_dim*2
         
         self.l1 = nn.Linear(input_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
@@ -48,7 +53,7 @@ class Actor(nn.Module):
         nn.init.constant_(self.log_std_layer.bias, -1.0)  # 初始化为较小的标准差
         
         # 初始化embedding层
-        nn.init.xavier_uniform_(self.radar_type_embedding.weight)
+        # nn.init.xavier_uniform_(self.radar_type_embedding.weight)
     
     def forward(self, self_state: torch.Tensor, observe_length: torch.Tensor, observe_type: torch.Tensor):
         '''
@@ -60,15 +65,28 @@ class Actor(nn.Module):
         observe_length = observe_length.to(self.device)
         observe_type = observe_type.to(self.device)
         
-        # 将observe_type转换为long类型用于embedding
-        observe_type_long = observe_type.long()
+        # 将theta转换为cos(theta)和sin(theta)
+        # self_state[:, :2] 是 x, y
+        # self_state[:, 2] 是 theta
+        xy = self_state[:, :2]  # (batch_size, 2)
+        theta = self_state[:, 2]  # (batch_size,)
+        cos_theta = torch.cos(theta).unsqueeze(1)  # (batch_size, 1)
+        sin_theta = torch.sin(theta).unsqueeze(1)  # (batch_size, 1)
         
-        # 通过embedding层处理雷达类型
-        embedded_observe_type = self.radar_type_embedding(observe_type_long)
-        embedded_observe_type_flat = embedded_observe_type.view(embedded_observe_type.size(0), -1)
+        # 拼接为新的自身状态 (x, y, cos(theta), sin(theta))
+        transformed_self_state = torch.cat([xy, cos_theta, sin_theta], dim=1)  # (batch_size, 4)
+        
+        # # 将observe_type转换为long类型用于embedding
+        # observe_type_long = observe_type.long()
+        
+        # # 通过embedding层处理雷达类型
+        # embedded_observe_type = self.radar_type_embedding(observe_type_long)
+        # embedded_observe_type_flat = embedded_observe_type.view(embedded_observe_type.size(0), -1)
         
         # 拼接所有特征
-        x = torch.cat([self_state, observe_length, embedded_observe_type_flat], dim=1)    
+        # x = torch.cat([self_state, observe_length, embedded_observe_type_flat], dim=1)    
+        observe_type = observe_type.float()
+        x = torch.cat([transformed_self_state, observe_length, observe_type], dim=1)
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
         
@@ -137,7 +155,7 @@ class Critic(nn.Module):
         self.agent_n = agent_n
         self.l1 = nn.Linear(all_state_dim, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
-        self.l3 = nn.Linear(hidden_dim, hidden_dim)
+        # self.l3 = nn.Linear(hidden_dim, hidden_dim)
         self.value_head = nn.Linear(hidden_dim, agent_n)
         
         # Kaiming初始化
@@ -147,7 +165,8 @@ class Critic(nn.Module):
     
     def _init_weights(self):
         """Kaiming初始化"""
-        for layer in [self.l1, self.l2, self.l3]:
+        # for layer in [self.l1, self.l2, self.l3]:
+        for layer in [self.l1, self.l2]:
             nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
             nn.init.constant_(layer.bias, 0)
         # 输出层使用较小的初始化
@@ -158,7 +177,7 @@ class Critic(nn.Module):
         all_state = all_state.to(self.device)
         x = F.relu(self.l1(all_state))
         x = F.relu(self.l2(x))
-        x = F.relu(self.l3(x))
+        # x = F.relu(self.l3(x))
         value = self.value_head(x) # [batch_size, agent_n]
         return value
 

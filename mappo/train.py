@@ -422,5 +422,5 @@ def train_batch():
 
 
 if __name__ == "__main__":
-    train()  # 原始单轨迹训练
-    # train_batch()  # 批量训练
+    # train()  # 原始单轨迹训练
+    train_batch()  # 批量训练
