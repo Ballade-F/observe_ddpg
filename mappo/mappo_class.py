@@ -235,7 +235,7 @@ class MAPPO:
                 advantages.append(adv_i.to(self.device))  # [traj_len]
             
             # debug 先让adv=reward，维度转换一下，由[traj_len, agent_n]变为[agent_n, traj_len]
-            advantages = rewards.transpose(0, 1)
+            # advantages = rewards.transpose(0, 1)
             
             # 计算critic损失（使用mean，对该轨迹内的step和agent求平均）
             critic_loss = F.mse_loss(values, td_target.detach(), reduction='mean')

@@ -232,7 +232,7 @@ def train():
 
 
 def train_batch():
-    """批量训练函数 - 使用ReplayBufferBatch对多个环境进行批量训练"""
+    """批量训练函数 - 使用ReplayBufferBatch和mini batch对多个环境进行批量训练"""
     # 加载配置
     config_path = './config.json'
     config = json.load(open(config_path, 'r'))
@@ -248,7 +248,7 @@ def train_batch():
     with open(config_copy_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
     
-    logger.info("开始批量训练 MAPPO...")
+    logger.info("开始批量训练 MAPPO (with mini batch)...")
     logger.info(f"日志目录: {log_dir}")
     logger.info(f"配置文件已保存到: {config_copy_path}")
     logger.info(f"配置参数: {config}")
@@ -264,20 +264,33 @@ def train_batch():
     device = torch.device(config["training"]["device"] if torch.cuda.is_available() else "cpu")
     logger.info(f"使用设备: {device}")
 
+    # 从配置文件读取num_envs和mini_batch_size
+    num_envs = config["training"].get("num_envs", 100)
+    mini_batch_size = config["training"].get("mini_batch_size", 10)
+    
+    # 验证参数合法性
+    if num_envs % mini_batch_size != 0:
+        logger.warning(f"警告: num_envs ({num_envs}) 不能被 mini_batch_size ({mini_batch_size}) 整除，将调整 num_envs")
+        num_envs = (num_envs // mini_batch_size) * mini_batch_size
+        logger.info(f"调整后的 num_envs: {num_envs}")
+    
+    num_mini_batches = num_envs // mini_batch_size
+    
     # 创建多个环境以提高泛化能力
-    num_envs = 10
     envs = []
     logger.info(f"开始创建 {num_envs} 个训练环境（每个环境配置不同）...")
+    logger.info(f"Mini batch 配置: mini_batch_size={mini_batch_size}, num_mini_batches={num_mini_batches}")
     
     for env_idx in range(num_envs):
         # 连续创建环境，随机数生成器状态会自动变化，确保每个环境配置不同
         env = SimEnv(config)
         envs.append(env)
-        logger.info(f"环境 {env_idx+1}/{num_envs} 创建成功 - Agent数量: {env.kNumAgents}, 目标数量: {env.kNumGoals}, 障碍物数量: {env.kNumObstacles}")
+        if (env_idx + 1) % 10 == 0 or env_idx == num_envs - 1:
+            logger.info(f"环境创建进度: {env_idx+1}/{num_envs}")
     
     # 使用第一个环境获取维度信息
     env_template = envs[0]
-    logger.info(f"所有环境创建完成，将进行批量训练")
+    logger.info(f"所有环境创建完成，将进行mini batch训练")
     
     # 计算状态和动作维度
     agent_state_dim = 3  # x, y, theta
@@ -315,17 +328,17 @@ def train_batch():
         device=device
     )
 
-    # 使用ReplayBufferBatch，batch_size为num_envs
+    # 使用ReplayBufferBatch，batch_size为mini_batch_size
     replay_buffer_batch = ReplayBufferBatch(
         agent_n=env_template.kNumAgents,
         all_state_dim=all_state_dim,
         observe_state_dim=observe_dim,
         action_dim=action_dim,
-        batch_size=num_envs,
+        batch_size=mini_batch_size,
         step_max=step_max
     )
 
-    # 记录指标（累积num_envs轮的指标）
+    # 记录指标（每个mini batch的指标）
     batch_a_loss = []
     batch_c_loss = []
     batch_ent = []
@@ -335,92 +348,104 @@ def train_batch():
 
     episode = 0
     while episode < total_episodes:
-        # 重置batch buffer
-        replay_buffer_batch.reset_buffer()
-        
-        # 对num_envs个环境分别进行rollout
-        for traj_idx in range(num_envs):
+        # 遍历所有的mini batch
+        for mini_batch_idx in range(num_mini_batches):
             if episode >= total_episodes:
                 break
-                
-            episode += 1
-            env = envs[traj_idx]
             
-            # 重置环境
-            env.reset()
+            # 重置batch buffer
+            replay_buffer_batch.reset_buffer()
             
-            current_global_state = get_global_state(env)
-            current_agent_state = env.agentState
-            current_observe_lengths = env.observeStateL
-            current_observe_types = env.observeStateType
-
-            # 记录该episode的指标
-            episode_reward = 0
-
-            for step in range(step_max):
-                actions, a_logprob = mappo.choose_action(current_agent_state, current_observe_lengths, current_observe_types, current_global_state)
-                next_agent_state, next_goal_state, next_obstacles, next_observe_lengths, next_observe_types, reward, done = env.step(actions)
-                next_global_state = get_global_state(env)
-
-                # 存储经验到batch buffer的对应轨迹
-                replay_buffer_batch.store_transition(
-                    traj_idx=traj_idx,
-                    state=current_global_state,
-                    next_state=next_global_state,
-                    agent_state=current_agent_state,
-                    observe_l=current_observe_lengths,
-                    observe_t=current_observe_types,
-                    action=actions,
-                    a_logprob=a_logprob,
-                    reward=reward,
-                    done=done
-                )
-
-                # 更新状态
-                current_global_state = next_global_state
-                current_agent_state = next_agent_state
-                current_observe_lengths = next_observe_lengths
-                current_observe_types = next_observe_types
-
-                # 记录指标
-                episode_reward += reward.sum()
-
-                if done:
+            # 计算当前mini batch对应的环境索引范围
+            start_env_idx = mini_batch_idx * mini_batch_size
+            end_env_idx = start_env_idx + mini_batch_size
+            
+            # 对当前mini batch的环境分别进行rollout
+            for traj_idx in range(mini_batch_size):
+                if episode >= total_episodes:
                     break
-            
-            # 记录该轨迹的指标
-            num_completed_goals = np.sum(env.goalState[:, 2] > 0.5)
-            batch_reward.append(episode_reward)
-            batch_step.append(step)
-            batch_num_completed_goals.append(num_completed_goals)
-        
-        # 对整个batch进行一次更新
-        a_loss, c_loss, ent = mappo.update_batch(replay_buffer_batch)
-        batch_a_loss.append(a_loss)
-        batch_c_loss.append(c_loss)
-        batch_ent.append(ent)
-        
-        # 每次update_batch后打印日志
-        logger.info(
-            f"episode {episode}, actor loss: {np.mean(batch_a_loss)}, "
-            f"critic loss: {np.mean(batch_c_loss)}, entropy: {np.mean(batch_ent)}, "
-            f"reward: {np.mean(batch_reward)}, num completed goals: {np.mean(batch_num_completed_goals)}, "
-            f"step: {np.mean(batch_step)}")
-        
-        # 清空批次指标
-        batch_a_loss = []
-        batch_c_loss = []
-        batch_ent = []
-        batch_reward = []
-        batch_num_completed_goals = []
-        batch_step = []
+                    
+                episode += 1
+                env_idx = start_env_idx + traj_idx
+                env = envs[env_idx]
+                
+                # 重置环境
+                env.reset()
+                
+                current_global_state = get_global_state(env)
+                current_agent_state = env.agentState
+                current_observe_lengths = env.observeStateL
+                current_observe_types = env.observeStateType
 
-        # 每100个episode保存一次模型
-        if episode % 100 == 0:
-            mappo.save_model(models_dir, episode)
-            logger.info(f"Model saved at episode {episode}")
+                # 记录该episode的指标
+                episode_reward = 0
+
+                for step in range(step_max):
+                    actions, a_logprob = mappo.choose_action(current_agent_state, current_observe_lengths, current_observe_types, current_global_state)
+                    next_agent_state, next_goal_state, next_obstacles, next_observe_lengths, next_observe_types, reward, done = env.step(actions)
+                    next_global_state = get_global_state(env)
+
+                    # 存储经验到batch buffer的对应轨迹
+                    replay_buffer_batch.store_transition(
+                        traj_idx=traj_idx,
+                        state=current_global_state,
+                        next_state=next_global_state,
+                        agent_state=current_agent_state,
+                        observe_l=current_observe_lengths,
+                        observe_t=current_observe_types,
+                        action=actions,
+                        a_logprob=a_logprob,
+                        reward=reward,
+                        done=done
+                    )
+
+                    # 更新状态
+                    current_global_state = next_global_state
+                    current_agent_state = next_agent_state
+                    current_observe_lengths = next_observe_lengths
+                    current_observe_types = next_observe_types
+
+                    # 记录指标
+                    episode_reward += reward.sum()
+
+                    if done:
+                        break
+                
+                # 记录该轨迹的指标
+                num_completed_goals = np.sum(env.goalState[:, 2] > 0.5)
+                batch_reward.append(episode_reward)
+                batch_step.append(step)
+                batch_num_completed_goals.append(num_completed_goals)
+            
+            # 对当前mini batch进行一次更新
+            a_loss, c_loss, ent = mappo.update_batch(replay_buffer_batch)
+            batch_a_loss.append(a_loss)
+            batch_c_loss.append(c_loss)
+            batch_ent.append(ent)
+            
+            # 每个mini batch更新后打印日志（每10个mini batch打印一次）
+            if (mini_batch_idx + 1) % 1 == 0 or (mini_batch_idx + 1) == num_mini_batches:
+                logger.info(
+                    f"episode {episode}, mini_batch {mini_batch_idx+1}/{num_mini_batches}, "
+                    f"actor loss: {np.mean(batch_a_loss):.4f}, "
+                    f"critic loss: {np.mean(batch_c_loss):.4f}, entropy: {np.mean(batch_ent):.4f}, "
+                    f"reward: {np.mean(batch_reward):.2f}, num completed goals: {np.mean(batch_num_completed_goals):.2f}, "
+                    f"step: {np.mean(batch_step):.2f}")
+                
+                # 清空批次指标
+                batch_a_loss = []
+                batch_c_loss = []
+                batch_ent = []
+                batch_reward = []
+                batch_num_completed_goals = []
+                batch_step = []
+
+            # 每100个episode保存一次模型
+            if episode % 100 == 0:
+                mappo.save_model(models_dir, episode)
+                logger.info(f"Model saved at episode {episode}")
 
 
 if __name__ == "__main__":
-    train()  # 原始单轨迹训练
-    # train_batch()  # 批量训练
+    # train()  # 原始单轨迹训练
+    train_batch()  # Mini batch批量训练
