@@ -172,7 +172,7 @@ def train():
         episode_reward=0
 
         for step in range(step_max):
-            actions,a_logprob = mappo.choose_action(current_agent_state, current_observe_lengths, current_observe_types)
+            actions,a_logprob = mappo.choose_action(current_agent_state, current_observe_lengths, current_observe_types, current_global_state)
             next_agent_state, next_goal_state, next_obstacles, next_observe_lengths, next_observe_types, reward, done = env.step(actions) 
             next_global_state = get_global_state(env)
 
@@ -358,7 +358,7 @@ def train_batch():
             episode_reward = 0
 
             for step in range(step_max):
-                actions, a_logprob = mappo.choose_action(current_agent_state, current_observe_lengths, current_observe_types)
+                actions, a_logprob = mappo.choose_action(current_agent_state, current_observe_lengths, current_observe_types, current_global_state)
                 next_agent_state, next_goal_state, next_obstacles, next_observe_lengths, next_observe_types, reward, done = env.step(actions)
                 next_global_state = get_global_state(env)
 
@@ -422,5 +422,5 @@ def train_batch():
 
 
 if __name__ == "__main__":
-    # train()  # 原始单轨迹训练
-    train_batch()  # 批量训练
+    train()  # 原始单轨迹训练
+    # train_batch()  # 批量训练

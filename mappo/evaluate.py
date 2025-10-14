@@ -192,7 +192,7 @@ def evaluate():
     config = json.load(open(config_path, 'r'))
 
     # 加载模型
-    model_dir = './models/train_2025-10-06-00-19'
+    model_dir = './models/train_2025-10-13-19-26'
     model_version = 2.0
     if not os.path.exists(model_dir):
         print(f"错误：找不到模型目录 {model_dir}")
@@ -210,7 +210,7 @@ def evaluate():
         torch.cuda.manual_seed(seed)
     
     # 设置设备
-    device = torch.device(config["evaluation"]["device"] if torch.cuda.is_available() else "cpu")
+    device = torch.device(config["training"]["device"] if torch.cuda.is_available() else "cpu")
     print(f"使用设备: {device}")
     
     # 创建环境
@@ -286,14 +286,16 @@ def evaluate():
             return []
         
         # 选择动作（不添加噪声）
+        global_state = get_global_state(env)
         actions, a_logprob = mappo.choose_action(
             env.agentState,
             env.observeStateL,
-            env.observeStateType
+            env.observeStateType,
+            global_state
         )
         
         # 计算Critic值
-        global_state = get_global_state(env)
+
         global_state_tensor = torch.FloatTensor(global_state).unsqueeze(0).to(device)
         actions_tensor = torch.FloatTensor(actions.flatten()).unsqueeze(0).to(device)
         

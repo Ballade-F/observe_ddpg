@@ -14,7 +14,7 @@
     "agent": {
         "kAgentRadius": 0.2,
         "kMaxSpeed": 1.0,
-        "kMaxAngularSpeed": 1.0,
+        "kMaxAngularSpeed": 2.0,
         "kNumRadars": 32,
         "kMaxRadarDist": 3.0
     },
@@ -23,7 +23,7 @@
     },
     "reward": {
         "kTimeReward": -0.0,
-        "kDistCostReward": -0.2,
+        "kDistCostReward": -0.1,
         "kWCostReward":-0.0,
         "kCollisionReward": -30.0,
         "kGoalReward": 30.0,
@@ -33,14 +33,14 @@
         "kMinGoalDistance": 0.3
     },
     "training": {
-        "step_max": 500,
+        "step_max": 100,
         "total_episodes": 2000,
         "episode_limit": 200,
         "gamma": 0.99,
         "lamda": 0.97,
         "epsilon": 0.4,
         "device": "cuda",
-        "actor_lr": 1e-4,
+        "actor_lr": 5e-4,
         "critic_lr": 2e-4
     },
     "network": {

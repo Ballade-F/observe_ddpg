@@ -54,7 +54,8 @@ class MAPPO:
             action_dim=self.action_dim,
             hidden_dim=self.hidden_dim,
             max_action=self.max_action,
-            device=self.device
+            device=self.device,
+            all_state_dim=self.all_state_dim
         )
         
         self.critic = Critic(
@@ -68,7 +69,7 @@ class MAPPO:
         self.actor_optimizers = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
         self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=critic_lr)
 
-    def choose_action(self, self_state, observe_l, observe_t):
+    def choose_action(self, self_state, observe_l, observe_t, all_state):
         """
         选择动作
         Args:
@@ -83,9 +84,11 @@ class MAPPO:
             self_state = torch.tensor(self_state, dtype=torch.float32)
             observe_l = torch.tensor(observe_l, dtype=torch.float32)
             observe_t = torch.tensor(observe_t, dtype=torch.float32)
+            all_state = torch.tensor(all_state, dtype=torch.float32) #shape: (all_state_dim,)
+            all_state = all_state.unsqueeze(0) #shape: (1, all_state_dim)
             
             a_n, a_logprob_n = self.actor.get_action_and_log_prob(
-                self_state, observe_l, observe_t
+                self_state, observe_l, observe_t, all_state=all_state
             )
             
             return a_n.cpu().numpy(), a_logprob_n.cpu().numpy()
@@ -141,7 +144,7 @@ class MAPPO:
             old_probs_i = old_probs_i.sum(dim=1, keepdim=False).detach() # [traj_len]
 
             # 获取当前的均值和对数标准差，创建正态分布
-            mean, log_std = self.actor(self_state, observe_l_i, observe_t_i)
+            mean, log_std = self.actor(self_state, observe_l_i, observe_t_i, states)
             std = log_std.exp()
             normal_dist = torch.distributions.Normal(mean, std)
             
@@ -153,7 +156,8 @@ class MAPPO:
             surr1 = ratio * advantages[i] # [traj_len]
             surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages[i] # [traj_len]
 
-            action_loss_i = torch.mean(-torch.min(surr1, surr2))
+            # action_loss_i = torch.mean(-torch.min(surr1, surr2))
+            action_loss_i = torch.mean(-surr1)
             action_loss += action_loss_i
             # 对于连续动作空间，熵的计算不同
             entropy_val = torch.mean(normal_dist.entropy()).item()
@@ -250,7 +254,7 @@ class MAPPO:
                 old_probs_i = old_probs_i.sum(dim=1, keepdim=False).detach()  # [traj_len]
                 
                 # 获取当前的均值和对数标准差，创建正态分布
-                mean, log_std = self.actor(self_state, observe_l_i, observe_t_i)
+                mean, log_std = self.actor(self_state, observe_l_i, observe_t_i, states)
                 std = log_std.exp()
                 normal_dist = torch.distributions.Normal(mean, std)
                 
@@ -263,7 +267,8 @@ class MAPPO:
                 surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages[i]
                 
                 # 对该轨迹的该智能体的所有步求平均
-                action_loss_i = torch.mean(-torch.min(surr1, surr2))
+                # action_loss_i = torch.mean(-torch.min(surr1, surr2))
+                action_loss_i = torch.mean(-surr1)
                 total_action_loss += action_loss_i
                 
                 # 对于连续动作空间，熵的计算

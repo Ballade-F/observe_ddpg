@@ -6,7 +6,7 @@ from torch.distributions import Normal
 
 class Actor(nn.Module):
     def __init__(self, self_state_dim: int, observe_state_dim: int, action_dim: int, 
-                 hidden_dim: int, max_action: np.ndarray, device: torch.device):
+                 hidden_dim: int, max_action: np.ndarray, device: torch.device, all_state_dim: int):
         super(Actor, self).__init__()
         self.max_action = torch.FloatTensor(max_action)
         self.device = device
@@ -28,7 +28,8 @@ class Actor(nn.Module):
         # 所以实际输入维度是4而不是self_state_dim
         input_dim = 4 + observe_state_dim*2
         
-        self.l1 = nn.Linear(input_dim, hidden_dim)
+        # self.l1 = nn.Linear(input_dim, hidden_dim)
+        self.l1 = nn.Linear(all_state_dim+1, hidden_dim)
         self.l2 = nn.Linear(hidden_dim, hidden_dim)
         
         # MAPPO需要输出mean和log_std
@@ -55,7 +56,7 @@ class Actor(nn.Module):
         # 初始化embedding层
         # nn.init.xavier_uniform_(self.radar_type_embedding.weight)
     
-    def forward(self, self_state: torch.Tensor, observe_length: torch.Tensor, observe_type: torch.Tensor):
+    def forward(self, self_state: torch.Tensor, observe_length: torch.Tensor, observe_type: torch.Tensor,all_state: torch.Tensor):
         '''
         self_state: (batch_size, self_state_dim) 智能体自身状态 x,y,theta
         observe_length: (batch_size, observe_state_dim) 雷达探测到的障碍物距离
@@ -86,7 +87,16 @@ class Actor(nn.Module):
         # 拼接所有特征
         # x = torch.cat([self_state, observe_length, embedded_observe_type_flat], dim=1)    
         observe_type = observe_type.float()
-        x = torch.cat([transformed_self_state, observe_length, observe_type], dim=1)
+        # x = torch.cat([transformed_self_state, observe_length, observe_type], dim=1)
+
+        # debug
+        all_state = all_state.to(self.device)
+        theta = all_state[:, 2]  # (batch_size,)
+        cos_theta = torch.cos(theta).unsqueeze(1)  # (batch_size, 1)
+        sin_theta = torch.sin(theta).unsqueeze(1)  # (batch_size, 1)
+        all_state = torch.cat([all_state[:, :2], cos_theta, sin_theta, all_state[:, 3:]], dim=1)  # (batch_size, all_state_dim+1)
+        x = all_state
+
         x = F.relu(self.l1(x))
         x = F.relu(self.l2(x))
         
@@ -107,11 +117,11 @@ class Actor(nn.Module):
         return mean, std
     
     def get_action_and_log_prob(self, self_state: torch.Tensor, observe_length: torch.Tensor, 
-                               observe_type: torch.Tensor, deterministic: bool = False):
+                               observe_type: torch.Tensor, deterministic: bool = False, all_state: torch.Tensor = None):
         """
         获取动作和对数概率，用于训练和推理
         """
-        mean, std = self.forward(self_state, observe_length, observe_type)
+        mean, std = self.forward(self_state, observe_length, observe_type, all_state)
         
         if deterministic:
             action = mean
@@ -129,11 +139,11 @@ class Actor(nn.Module):
         return action, log_prob
     
     def evaluate_actions(self, self_state: torch.Tensor, observe_length: torch.Tensor, 
-                        observe_type: torch.Tensor, actions: torch.Tensor):
+                        observe_type: torch.Tensor, actions: torch.Tensor, all_state: torch.Tensor):
         """
         评估给定动作的对数概率和熵，用于训练时的策略梯度计算
         """
-        mean, std = self.forward(self_state, observe_length, observe_type)
+        mean, std = self.forward(self_state, observe_length, observe_type, all_state)
         
         # 创建正态分布
         dist = Normal(mean, std)
@@ -225,7 +235,7 @@ def test_network():
         print("测试Actor网络...")
         print(f"{'='*30}")
         
-        actor = Actor(self_state_dim, observe_state_dim, action_dim, hidden_dim, max_action, device)
+        actor = Actor(self_state_dim, observe_state_dim, action_dim, hidden_dim, max_action, device, all_state_dim)
         print(f"✓ Actor网络创建成功")
         print(f"  网络参数数量: {sum(p.numel() for p in actor.parameters())}")
         
